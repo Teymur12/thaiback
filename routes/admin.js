@@ -389,4 +389,6 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
   }
 });
 
+
+
 module.exports = router;
