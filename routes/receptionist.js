@@ -182,5 +182,123 @@ router.get('/massage-types/:token', auth, receptionistAuth, async (req, res) => 
     res.status(500).json({ message: error.message });
   }
 });
+router.post('/expenses/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const expense = new Expense({
+      ...req.body,
+      branch: req.user.branch,
+      createdBy: req.user.userId
+    });
+    
+    await expense.save();
+    res.status(201).json(expense);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// GET - Bugünkü xərclər
+router.get('/expenses/today/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const expenses = await Expense.find({
+      branch: req.user.branch,
+      date: { $gte: today, $lt: tomorrow }
+    }).populate('createdBy', 'name');
+
+    res.json(expenses);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET - Tarixə görə xərclər
+router.get('/expenses/date/:date/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const date = new Date(req.params.date);
+    const nextDay = new Date(date);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    const expenses = await Expense.find({
+      branch: req.user.branch,
+      date: { $gte: date, $lt: nextDay }
+    }).populate('createdBy', 'name');
+
+    res.json(expenses);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET - Bütün xərclər (resepsiyonçunun filialı üçün)
+router.get('/expenses/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const expenses = await Expense.find({
+      branch: req.user.branch
+    }).populate('createdBy', 'name').sort({ date: -1 });
+
+    res.json(expenses);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// PUT - Xərc yenilə
+router.put('/expenses/:id/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Yalnız öz filialının xərclərini yeniləyə bilər
+    const expense = await Expense.findOne({
+      _id: id,
+      branch: req.user.branch
+    });
+    
+    if (!expense) {
+      return res.status(404).json({ message: 'Xərc tapılmadı və ya icazəniz yoxdur' });
+    }
+    
+    const updatedExpense = await Expense.findByIdAndUpdate(
+      id,
+      req.body,
+      { new: true, runValidators: true }
+    ).populate('createdBy', 'name');
+    
+    res.json(updatedExpense);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// DELETE - Xərc sil
+router.delete('/expenses/:id/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Yalnız öz filialının xərclərini silə bilər
+    const expense = await Expense.findOne({
+      _id: id,
+      branch: req.user.branch
+    });
+    
+    if (!expense) {
+      return res.status(404).json({ message: 'Xərc tapılmadı və ya icazəniz yoxdur' });
+    }
+    
+    await Expense.findByIdAndDelete(id);
+    
+    res.json({
+      message: 'Xərc uğurla silindi',
+      deletedExpense: expense
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 
 module.exports = router;

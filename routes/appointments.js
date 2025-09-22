@@ -8,7 +8,6 @@ const Expense = require('../models/Expense');
 const { auth, adminAuth } = require('../middleware/auth');
 const router = express.Router();
 
-
 // Həftə üzrə randevuları almaq
 router.get('/week/:branchId/:startDate/:token', auth, async (req, res) => {
   try {
@@ -20,6 +19,34 @@ router.get('/week/:branchId/:startDate/:token', auth, async (req, res) => {
     end.setDate(start.getDate() + 6);
     end.setHours(23, 59, 59, 999);
     start.setHours(0, 0, 0, 0);
+
+    const appointments = await Appointment.find({
+      branch: branchId,
+      appointmentDate: { $gte: start, $lte: end }
+    })
+    .populate('customer', 'name phone')
+    .populate('masseur', 'name')
+    .populate('massageType', 'name duration')
+    .populate('branch', 'name')
+    .sort({ appointmentDate: 1 });
+
+    res.json(appointments);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Gün üzrə randevuları almaq (YENİ)
+router.get('/day/:branchId/:date/:token', auth, async (req, res) => {
+  try {
+    const { branchId, date } = req.params;
+    
+    // Günün başlanğıc və son saatlarını hesabla
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
 
     const appointments = await Appointment.find({
       branch: branchId,
@@ -82,6 +109,23 @@ router.put('/:id/:token', auth, async (req, res) => {
     res.json(appointment);
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+});
+
+// Randevu silmək (YENİ)
+router.delete('/:id/:token', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const appointment = await Appointment.findByIdAndDelete(id);
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    res.json({ message: 'Randevu uğurla silindi', deletedAppointment: appointment });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 
