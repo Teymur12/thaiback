@@ -1,192 +1,337 @@
+// routes/appointments.js
 const express = require('express');
-const User = require('../models/User');
-const Branch = require('../models/Branch');
-const Masseur = require('../models/Masseur');
-const MassageType = require('../models/MassageType');
 const Appointment = require('../models/Appointment');
-const Expense = require('../models/Expense');
-const { auth, adminAuth } = require('../middleware/auth');
+const Customer = require('../models/Customer');
+const { auth } = require('../middleware/auth');
 const router = express.Router();
 
-// Həftə üzrə randevuları almaq
-router.get('/week/:branchId/:startDate/:token', auth, async (req, res) => {
-  try {
-    const { branchId, startDate } = req.params;
-    
-    // Həftənin başlanğıc və son tarixlərini hesabla
-    const start = new Date(startDate);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-    start.setHours(0, 0, 0, 0);
-
-    const appointments = await Appointment.find({
-      branch: branchId,
-      appointmentDate: { $gte: start, $lte: end }
-    })
-    .populate('customer', 'name phone')
-    .populate('masseur', 'name')
-    .populate('massageType', 'name duration')
-    .populate('branch', 'name')
-    .sort({ appointmentDate: 1 });
-
-    res.json(appointments);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Gün üzrə randevuları almaq (YENİ)
-router.get('/day/:branchId/:date/:token', auth, async (req, res) => {
+// Günlük randevuları al (filial və tarixə görə)
+router.get('/daily/:branchId/:date/:token', auth, async (req, res) => {
   try {
     const { branchId, date } = req.params;
     
-    // Günün başlanğıc və son saatlarını hesabla
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
+    // Tarixi parse et
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
     
-    const end = new Date(date);
-    end.setHours(23, 59, 59, 999);
+    const endDate = new Date(date);
+    endDate.setHours(23, 59, 59, 999);
 
     const appointments = await Appointment.find({
       branch: branchId,
-      appointmentDate: { $gte: start, $lte: end }
+      startTime: {
+        $gte: startDate,
+        $lte: endDate
+      },
+      status: { $ne: 'cancelled' }
     })
     .populate('customer', 'name phone')
     .populate('masseur', 'name')
-    .populate('massageType', 'name duration')
+    .populate('massageType', 'name')
     .populate('branch', 'name')
-    .sort({ appointmentDate: 1 });
+    .sort({ startTime: 1 });
 
     res.json(appointments);
   } catch (error) {
+    console.error('Randevuları alma xətası:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Randevu yaratmaq
+// Yeni randevu yarat
 router.post('/:token', auth, async (req, res) => {
   try {
     const appointmentData = {
       ...req.body,
-      createdBy: req.user.userId
+      createdBy: req.user.id,
+      status: 'scheduled'
     };
+
+    // Randevu konfliktini yoxla
+    const conflictingAppointment = await Appointment.findOne({
+      masseur: appointmentData.masseur,
+      branch: appointmentData.branch,
+      status: { $ne: 'cancelled' },
+      $or: [
+        {
+          startTime: {
+            $lt: new Date(appointmentData.endTime),
+            $gte: new Date(appointmentData.startTime)
+          }
+        },
+        {
+          endTime: {
+            $gt: new Date(appointmentData.startTime),
+            $lte: new Date(appointmentData.endTime)
+          }
+        },
+        {
+          startTime: { $lte: new Date(appointmentData.startTime) },
+          endTime: { $gte: new Date(appointmentData.endTime) }
+        }
+      ]
+    });
+
+    if (conflictingAppointment) {
+      return res.status(400).json({ 
+        message: 'Bu vaxt aralığında masajist artıq məşğuldur!' 
+      });
+    }
 
     const appointment = new Appointment(appointmentData);
     await appointment.save();
-    
+
+    // Populate edilmiş versiyonu qaytar
     const populatedAppointment = await Appointment.findById(appointment._id)
       .populate('customer', 'name phone')
       .populate('masseur', 'name')
-      .populate('massageType', 'name duration price')
+      .populate('massageType', 'name')
       .populate('branch', 'name');
 
     res.status(201).json(populatedAppointment);
   } catch (error) {
+    console.error('Randevu yaratma xətası:', error);
     res.status(400).json({ message: error.message });
   }
 });
 
-// Randevu yeniləmək
+// Randevu güncəllə
 router.put('/:id/:token', auth, async (req, res) => {
   try {
     const { id } = req.params;
     
-    const appointment = await Appointment.findByIdAndUpdate(
+    // Əgər vaxt dəyişdirilirsə, konflikt yoxla
+    if (req.body.startTime || req.body.endTime || req.body.masseur) {
+      const currentAppointment = await Appointment.findById(id);
+      
+      const updatedData = {
+        masseur: req.body.masseur || currentAppointment.masseur,
+        branch: req.body.branch || currentAppointment.branch,
+        startTime: req.body.startTime || currentAppointment.startTime,
+        endTime: req.body.endTime || currentAppointment.endTime
+      };
+
+      const conflictingAppointment = await Appointment.findOne({
+        _id: { $ne: id },
+        masseur: updatedData.masseur,
+        branch: updatedData.branch,
+        status: { $ne: 'cancelled' },
+        $or: [
+          {
+            startTime: {
+              $lt: new Date(updatedData.endTime),
+              $gte: new Date(updatedData.startTime)
+            }
+          },
+          {
+            endTime: {
+              $gt: new Date(updatedData.startTime),
+              $lte: new Date(updatedData.endTime)
+            }
+          },
+          {
+            startTime: { $lte: new Date(updatedData.startTime) },
+            endTime: { $gte: new Date(updatedData.endTime) }
+          }
+        ]
+      });
+
+      if (conflictingAppointment) {
+        return res.status(400).json({ 
+          message: 'Bu vaxt aralığında masajist artıq məşğuldur!' 
+        });
+      }
+    }
+
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
       id,
       req.body,
       { new: true, runValidators: true }
     )
     .populate('customer', 'name phone')
     .populate('masseur', 'name')
-    .populate('massageType', 'name duration price')
+    .populate('massageType', 'name')
     .populate('branch', 'name');
 
-    if (!appointment) {
+    if (!updatedAppointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
     }
 
-    res.json(appointment);
+    res.json(updatedAppointment);
   } catch (error) {
+    console.error('Randevu güncəllə xətası:', error);
     res.status(400).json({ message: error.message });
   }
 });
 
-// Randevu silmək (YENİ)
+// Randevu sil
 router.delete('/:id/:token', auth, async (req, res) => {
   try {
     const { id } = req.params;
     
-    const appointment = await Appointment.findByIdAndDelete(id);
-
+    const appointment = await Appointment.findById(id);
     if (!appointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
     }
 
-    res.json({ message: 'Randevu uğurla silindi', deletedAppointment: appointment });
+    // Admin və ya yaradanı randevunu silə bilər
+    if (req.user.role !== 'admin' && appointment.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Bu randevunu silmək səlahiyyətiniz yoxdur' });
+    }
+
+    await Appointment.findByIdAndDelete(id);
+    
+    res.json({ message: 'Randevu uğurla silindi' });
   } catch (error) {
+    console.error('Randevu silmə xətası:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Randevu statusunu yeniləmək (başlandı/tamamlandı)
-router.patch('/:id/status/:token', auth, async (req, res) => {
+// Randevunu tamamla (ödəniş məlumatı əlavə et)
+router.put('/:id/complete/:token', auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, paymentMethod, price } = req.body;
-    
-    const updateData = { status };
-    
-    // Əgər tamamlandı statusu verilsə, ödəniş məlumatlarını da yenilə
-    if (status === 'completed' && paymentMethod && price) {
-      updateData.paymentMethod = paymentMethod;
-      updateData.price = price;
+    const { paymentMethod, actualPrice, notes } = req.body;
+
+    if (!paymentMethod || !['cash', 'card', 'terminal'].includes(paymentMethod)) {
+      return res.status(400).json({ message: 'Ödəniş metodu seçilməlidir' });
     }
 
-    const appointment = await Appointment.findByIdAndUpdate(
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
       id,
-      updateData,
+      { 
+        status: 'completed',
+        paymentMethod: paymentMethod,
+        price: actualPrice || undefined,
+        notes: notes || undefined
+      },
       { new: true, runValidators: true }
     )
     .populate('customer', 'name phone')
     .populate('masseur', 'name')
-    .populate('massageType', 'name duration price')
+    .populate('massageType', 'name')
     .populate('branch', 'name');
 
-    if (!appointment) {
+    if (!updatedAppointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
     }
 
-    res.json(appointment);
+    res.json(updatedAppointment);
   } catch (error) {
+    console.error('Randevu tamamlama xətası:', error);
     res.status(400).json({ message: error.message });
   }
 });
 
-// Filial üçün masajistləri almaq
-router.get('/masseurs/:branchId/:token', auth, async (req, res) => {
+// Randevunu ləğv et
+router.put('/:id/cancel/:token', auth, async (req, res) => {
   try {
-    const { branchId } = req.params;
-    
-    const masseurs = await Masseur.find({ branch: branchId })
-      .select('name specialties')
-      .sort({ name: 1 });
+    const { id } = req.params;
+    const { reason } = req.body;
 
-    res.json(masseurs);
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      id,
+      { 
+        status: 'cancelled',
+        notes: reason ? `Ləğv səbəbi: ${reason}` : 'Ləğv edildi'
+      },
+      { new: true, runValidators: true }
+    )
+    .populate('customer', 'name phone')
+    .populate('masseur', 'name')
+    .populate('massageType', 'name')
+    .populate('branch', 'name');
+
+    if (!updatedAppointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    res.json(updatedAppointment);
   } catch (error) {
+    console.error('Randevu ləğv etmə xətası:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Masajistin günlük cədvəlini al
+router.get('/masseur/:masseurId/:date/:token', auth, async (req, res) => {
+  try {
+    const { masseurId, date } = req.params;
+    
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    
+    const endDate = new Date(date);
+    endDate.setHours(23, 59, 59, 999);
+
+    const appointments = await Appointment.find({
+      masseur: masseurId,
+      startTime: {
+        $gte: startDate,
+        $lte: endDate
+      },
+      status: { $ne: 'cancelled' }
+    })
+    .populate('customer', 'name phone')
+    .populate('massageType', 'name')
+    .populate('branch', 'name')
+    .sort({ startTime: 1 });
+
+    res.json(appointments);
+  } catch (error) {
+    console.error('Masajist cədvəli alma xətası:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Masaj növlərini almaq
-router.get('/massage-types/:token', auth, async (req, res) => {
+// Randevu axtarışı (müştəri adı və ya telefon ilə)
+router.get('/search/:token', auth, async (req, res) => {
   try {
-    const massageTypes = await MassageType.find()
-      .select('name durations')
-      .sort({ name: 1 });
+    const { q, branchId, date } = req.query;
+    
+    if (!q || q.length < 2) {
+      return res.status(400).json({ message: 'Axtarış sorğusu ən az 2 simvol olmalıdır' });
+    }
 
-    res.json(massageTypes);
+    // İlk olaraq müştəriləri tap
+    const customers = await Customer.find({
+      $or: [
+        { name: { $regex: q, $options: 'i' } },
+        { phone: { $regex: q, $options: 'i' } }
+      ]
+    });
+
+    const customerIds = customers.map(c => c._id);
+
+    // Sorğu filtri yarat
+    const filter = {
+      customer: { $in: customerIds },
+      status: { $ne: 'cancelled' }
+    };
+
+    if (branchId) {
+      filter.branch = branchId;
+    }
+
+    if (date) {
+      const searchDate = new Date(date);
+      const startDate = new Date(searchDate.setHours(0, 0, 0, 0));
+      const endDate = new Date(searchDate.setHours(23, 59, 59, 999));
+      filter.startTime = { $gte: startDate, $lte: endDate };
+    }
+
+    const appointments = await Appointment.find(filter)
+      .populate('customer', 'name phone')
+      .populate('masseur', 'name')
+      .populate('massageType', 'name')
+      .populate('branch', 'name')
+      .sort({ startTime: -1 })
+      .limit(20);
+
+    res.json(appointments);
   } catch (error) {
+    console.error('Randevu axtarış xətası:', error);
     res.status(500).json({ message: error.message });
   }
 });
