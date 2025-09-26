@@ -4,6 +4,7 @@ const Customer = require('../models/Customer');
 const Appointment = require('../models/Appointment');
 const Masseur = require('../models/Masseur');
 const MassageType = require('../models/MassageType');
+const Expense = require('../models/Expense'); // Bu sətr əlavə edilməli idi!
 const { auth, receptionistAuth } = require('../middleware/auth');
 const router = express.Router();
 
@@ -149,15 +150,47 @@ router.get('/appointments/:date/:token', auth, receptionistAuth, async (req, res
 
 router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (req, res) => {
   try {
-    const { paymentMethod } = req.body;
+    const { paymentMethod, paymentType, giftCardNumber } = req.body;
+    
+    const updateData = { 
+      status: 'completed',
+      paymentType: paymentType || 'cash'
+    };
+
+    if (paymentType === 'gift_card' && giftCardNumber) {
+      // Validate and use gift card
+      const giftCard = await GiftCard.findOne({ cardNumber: giftCardNumber });
+      
+      if (!giftCard) {
+        return res.status(400).json({ message: 'Hədiyyə kartı tapılmadı' });
+      }
+      
+      if (giftCard.isUsed) {
+        return res.status(400).json({ message: 'Bu hədiyyə kartı artıq istifadə olunub' });
+      }
+      
+      if (giftCard.expiryDate < new Date()) {
+        return res.status(400).json({ message: 'Bu hədiyyə kartının müddəti bitib' });
+      }
+
+      // Mark gift card as used
+      giftCard.isUsed = true;
+      giftCard.usedDate = new Date();
+      giftCard.usedInAppointment = req.params.id;
+      await giftCard.save();
+
+      updateData.giftCard = giftCard._id;
+      updateData.price = 0; // No cash payment needed
+    } else {
+      updateData.paymentMethod = paymentMethod;
+    }
+
     const appointment = await Appointment.findByIdAndUpdate(
       req.params.id,
-      { 
-        status: 'completed',
-        paymentMethod: paymentMethod
-      },
+      updateData,
       { new: true }
-    );
+    ).populate('giftCard');
+
     res.json(appointment);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -182,6 +215,10 @@ router.get('/massage-types/:token', auth, receptionistAuth, async (req, res) => 
     res.status(500).json({ message: error.message });
   }
 });
+
+// EXPENSE ROUTES - Xərc əməliyyatları
+
+// POST - Yeni xərc əlavə et
 router.post('/expenses/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const expense = new Expense({
@@ -193,6 +230,7 @@ router.post('/expenses/:token', auth, receptionistAuth, async (req, res) => {
     await expense.save();
     res.status(201).json(expense);
   } catch (error) {
+    console.error('Expense creation error:', error);
     res.status(400).json({ message: error.message });
   }
 });

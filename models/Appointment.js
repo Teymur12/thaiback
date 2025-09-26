@@ -43,10 +43,12 @@ const appointmentSchema = new mongoose.Schema({
     enum: ['scheduled', 'completed', 'cancelled'],
     default: 'scheduled'
   },
-  paymentMethod: {
+ paymentMethod: {
     type: String,
     enum: ['cash', 'card', 'terminal'],
-    required: function() { return this.status === 'completed'; }
+    required: function() { 
+      return this.status === 'completed' && this.paymentType !== 'gift_card'; 
+    }
   },
   notes: {
     type: String
@@ -55,7 +57,16 @@ const appointmentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
-  }
+  },
+   giftCard: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'GiftCard'
+  },
+  paymentType: {
+    type: String,
+    enum: ['cash', 'card', 'terminal', 'gift_card'],
+    required: function() { return this.status === 'completed'; }
+  },
 }, {
   timestamps: true
 });

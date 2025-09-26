@@ -6,6 +6,7 @@ const Masseur = require('../models/Masseur');
 const MassageType = require('../models/MassageType');
 const Appointment = require('../models/Appointment');
 const Expense = require('../models/Expense');
+const GiftCard = require('../models/GiftCard');
 const { auth, adminAuth } = require('../middleware/auth');
 const router = express.Router();
 
@@ -331,14 +332,21 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
     const nextDay = new Date(date);
     nextDay.setDate(nextDay.getDate() + 1);
 
+    // Completed appointments
     const appointments = await Appointment.find({
       createdAt: { $gte: date, $lt: nextDay },
       status: 'completed'
     }).populate('branch masseur massageType customer');
 
+    // Expenses
     const expenses = await Expense.find({
       date: { $gte: date, $lt: nextDay }
     }).populate('branch');
+
+    // Gift card sales
+    const giftCardSales = await GiftCard.find({
+      purchaseDate: { $gte: date, $lt: nextDay }
+    }).populate('branch massageType purchasedBy');
 
     const report = {
       date: req.params.date,
@@ -357,6 +365,13 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
             terminal: 0,
             total: 0
           },
+          giftCardSales: {
+            cash: 0,
+            card: 0,
+            terminal: 0,
+            total: 0,
+            count: 0
+          },
           expenses: {
             total: 0,
             items: []
@@ -368,6 +383,40 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       report.branches[branchId].revenue[appointment.paymentMethod] += appointment.price;
       report.branches[branchId].revenue.total += appointment.price;
       report.branches[branchId].appointments++;
+    });
+
+    // Process gift card sales
+    giftCardSales.forEach(giftCard => {
+      const branchId = giftCard.branch._id.toString();
+      if (!report.branches[branchId]) {
+        report.branches[branchId] = {
+          name: giftCard.branch.name,
+          revenue: {
+            cash: 0,
+            card: 0,
+            terminal: 0,
+            total: 0
+          },
+          giftCardSales: {
+            cash: 0,
+            card: 0,
+            terminal: 0,
+            total: 0,
+            count: 0
+          },
+          expenses: {
+            total: 0,
+            items: []
+          },
+          appointments: 0
+        };
+      }
+
+      // Assuming gift cards have a paymentMethod field or default to cash
+      const paymentMethod = giftCard.paymentMethod || 'cash';
+      report.branches[branchId].giftCardSales[paymentMethod] += giftCard.originalPrice;
+      report.branches[branchId].giftCardSales.total += giftCard.originalPrice;
+      report.branches[branchId].giftCardSales.count++;
     });
 
     // Process expenses
@@ -383,11 +432,19 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       }
     });
 
+    // Calculate total revenue including gift cards for each branch
+    Object.keys(report.branches).forEach(branchId => {
+      const branch = report.branches[branchId];
+      branch.totalRevenue = branch.revenue.total + branch.giftCardSales.total;
+      branch.netRevenue = branch.totalRevenue - branch.expenses.total;
+    });
+
     res.json(report);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
+
 
 
 
