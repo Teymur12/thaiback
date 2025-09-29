@@ -332,10 +332,16 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
     const nextDay = new Date(date);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    // Completed appointments
+    // Completed appointments (bugünkü tamamlanmış randevular)
     const appointments = await Appointment.find({
-      createdAt: { $gte: date, $lt: nextDay },
+      startTime: { $gte: date, $lt: nextDay }, // Masaja gəldiyi gün
       status: 'completed'
+    }).populate('branch masseur massageType customer');
+
+    // Bugün BEH verilən randevular (gələcək tarixlərdə masaja gələcəklər)
+    const advancePayments = await Appointment.find({
+      'advancePayment.paidAt': { $gte: date, $lt: nextDay },
+      'advancePayment.amount': { $gt: 0 }
     }).populate('branch masseur massageType customer');
 
     // Expenses
@@ -353,17 +359,23 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       branches: {}
     };
 
-    // Process appointments
-    appointments.forEach(appointment => {
-      const branchId = appointment.branch._id.toString();
+    // Helper function - filial strukturunu yaradır
+    const initBranch = (branchId, branchName) => {
       if (!report.branches[branchId]) {
         report.branches[branchId] = {
-          name: appointment.branch.name,
+          name: branchName,
           revenue: {
             cash: 0,
             card: 0,
             terminal: 0,
             total: 0
+          },
+          advancePayments: { // BEH gəlirləri
+            cash: 0,
+            card: 0,
+            terminal: 0,
+            total: 0,
+            count: 0
           },
           giftCardSales: {
             cash: 0,
@@ -379,47 +391,69 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
           appointments: 0
         };
       }
+    };
 
-      report.branches[branchId].revenue[appointment.paymentMethod] += appointment.price;
-      report.branches[branchId].revenue.total += appointment.price;
-      report.branches[branchId].appointments++;
+    // 1. BEH (Advance Payments) - bugün verilən behləri əlavə et
+    advancePayments.forEach(appointment => {
+      const branchId = appointment.branch._id.toString();
+      initBranch(branchId, appointment.branch.name);
+
+      const advAmount = appointment.advancePayment.amount;
+      const advMethod = appointment.advancePayment.paymentMethod;
+
+      report.branches[branchId].advancePayments[advMethod] += advAmount;
+      report.branches[branchId].advancePayments.total += advAmount;
+      report.branches[branchId].advancePayments.count++;
     });
 
-    // Process gift card sales
-    giftCardSales.forEach(giftCard => {
-      const branchId = giftCard.branch._id.toString();
-      if (!report.branches[branchId]) {
-        report.branches[branchId] = {
-          name: giftCard.branch.name,
-          revenue: {
-            cash: 0,
-            card: 0,
-            terminal: 0,
-            total: 0
-          },
-          giftCardSales: {
-            cash: 0,
-            card: 0,
-            terminal: 0,
-            total: 0,
-            count: 0
-          },
-          expenses: {
-            total: 0,
-            items: []
-          },
-          appointments: 0
-        };
+    // 2. Completed Appointments - bugün tamamlanan randevular
+    appointments.forEach(appointment => {
+      const branchId = appointment.branch._id.toString();
+      initBranch(branchId, appointment.branch.name);
+
+      // Əgər gift card ilə ödənilibs
+      if (appointment.paymentType === 'gift_card') {
+        // Gift card hesabata daxil edilməz (ayrıca gift card satışı var)
+        report.branches[branchId].appointments++;
+        return;
       }
 
-      // Assuming gift cards have a paymentMethod field or default to cash
+      // Əgər beh verilib və bugün qalan məbləğ ödənilibsə
+      if (appointment.advancePayment?.amount > 0 && appointment.remainingPayment?.amount > 0) {
+        const remAmount = appointment.remainingPayment.amount;
+        const remMethod = appointment.remainingPayment.paymentMethod;
+
+        report.branches[branchId].revenue[remMethod] += remAmount;
+        report.branches[branchId].revenue.total += remAmount;
+        report.branches[branchId].appointments++;
+      } 
+      // Əgər tam ödəniş (beh yoxdur)
+      else if (!appointment.advancePayment?.amount || appointment.advancePayment.amount === 0) {
+        const paymentMethod = appointment.paymentMethod;
+        const price = appointment.price;
+
+        report.branches[branchId].revenue[paymentMethod] += price;
+        report.branches[branchId].revenue.total += price;
+        report.branches[branchId].appointments++;
+      }
+      // Əgər yalnız beh verilib, hələ gəlməyib (bu halda startTime bu gün olmamalı)
+      else {
+        report.branches[branchId].appointments++;
+      }
+    });
+
+    // 3. Gift card satışları
+    giftCardSales.forEach(giftCard => {
+      const branchId = giftCard.branch._id.toString();
+      initBranch(branchId, giftCard.branch.name);
+
       const paymentMethod = giftCard.paymentMethod || 'cash';
       report.branches[branchId].giftCardSales[paymentMethod] += giftCard.originalPrice;
       report.branches[branchId].giftCardSales.total += giftCard.originalPrice;
       report.branches[branchId].giftCardSales.count++;
     });
 
-    // Process expenses
+    // 4. Xərclər
     expenses.forEach(expense => {
       const branchId = expense.branch._id.toString();
       if (report.branches[branchId]) {
@@ -432,19 +466,25 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       }
     });
 
-    // Calculate total revenue including gift cards for each branch
+    // 5. Ümumi hesablamalar
     Object.keys(report.branches).forEach(branchId => {
       const branch = report.branches[branchId];
-      branch.totalRevenue = branch.revenue.total + branch.giftCardSales.total;
+      
+      // Ümumi gəlir = masaj gəlirləri + beh gəlirləri + gift card satışları
+      branch.totalRevenue = branch.revenue.total + 
+                            branch.advancePayments.total + 
+                            branch.giftCardSales.total;
+      
+      // Xalis gəlir = ümumi gəlir - xərclər
       branch.netRevenue = branch.totalRevenue - branch.expenses.total;
     });
 
     res.json(report);
   } catch (error) {
+    console.error('Daily report error:', error);
     res.status(500).json({ message: error.message });
   }
 });
-
 
 
 

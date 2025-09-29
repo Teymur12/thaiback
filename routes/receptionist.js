@@ -117,20 +117,112 @@ router.get('/customers/:token/search/name/:name', auth, receptionistAuth, async 
 });
 
 // Appointments - token param ilə
+// routes/receptionist.js - Appointment əməliyyatları
+
+// POST - Yeni randevu (Beh ilə və ya beh olmadan)
 router.post('/appointments/:token', auth, receptionistAuth, async (req, res) => {
   try {
-    const appointment = new Appointment({
+    const appointmentData = {
       ...req.body,
       branch: req.user.branch,
       createdBy: req.user.userId
-    });
+    };
+
+    // Əgər beh varsa, onu əlavə et
+    if (req.body.advancePayment && req.body.advancePayment.amount > 0) {
+      appointmentData.advancePayment = {
+        amount: req.body.advancePayment.amount,
+        paymentMethod: req.body.advancePayment.paymentMethod,
+        paidAt: new Date()
+      };
+    }
+
+    const appointment = new Appointment(appointmentData);
     await appointment.save();
-    res.status(201).json(appointment);
+    
+    const populatedAppointment = await Appointment.findById(appointment._id)
+      .populate('customer masseur massageType branch');
+    
+    res.status(201).json(populatedAppointment);
   } catch (error) {
+    console.error('Appointment creation error:', error);
     res.status(400).json({ message: error.message });
   }
 });
 
+// PUT - Randevunu tamamla (Qalan məbləği ödə)
+router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { paymentMethod, paymentType, giftCardNumber } = req.body;
+    const appointment = await Appointment.findById(req.params.id);
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    const updateData = { 
+      status: 'completed',
+      paymentType: paymentType || 'cash'
+    };
+
+    // Gift Card ilə ödəniş
+    if (paymentType === 'gift_card' && giftCardNumber) {
+      const giftCard = await GiftCard.findOne({ cardNumber: giftCardNumber });
+      
+      if (!giftCard) {
+        return res.status(400).json({ message: 'Hədiyyə kartı tapılmadı' });
+      }
+      
+      if (giftCard.isUsed) {
+        return res.status(400).json({ message: 'Bu hədiyyə kartı artıq istifadə olunub' });
+      }
+      
+      if (giftCard.expiryDate < new Date()) {
+        return res.status(400).json({ message: 'Bu hədiyyə kartının müddəti bitib' });
+      }
+
+      giftCard.isUsed = true;
+      giftCard.usedDate = new Date();
+      giftCard.usedInAppointment = req.params.id;
+      await giftCard.save();
+
+      updateData.giftCard = giftCard._id;
+      updateData.price = 0;
+    } 
+    // Əgər əvvəlcədən beh verilib
+    else if (appointment.advancePayment && appointment.advancePayment.amount > 0) {
+      const remainingAmount = appointment.price - appointment.advancePayment.amount;
+      
+      if (remainingAmount > 0) {
+        updateData.remainingPayment = {
+          amount: remainingAmount,
+          paymentMethod: paymentMethod,
+          paidAt: new Date()
+        };
+      }
+      
+      // paymentType beh + nağd/kart qarışığı kimi qeyd et
+      updateData.paymentType = 'mixed'; // Və ya ayrıca 'advance' kimi
+    } 
+    // Tam ödəniş (beh yoxdur)
+    else {
+      updateData.paymentMethod = paymentMethod;
+    }
+
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true }
+    ).populate('customer masseur massageType branch giftCard');
+
+    res.json(updatedAppointment);
+  } catch (error) {
+    console.error('Complete appointment error:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// GET - Randevuları çək (bugünkü və ya tarixə görə)
 router.get('/appointments/:date/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const date = new Date(req.params.date);
@@ -148,52 +240,94 @@ router.get('/appointments/:date/:token', auth, receptionistAuth, async (req, res
   }
 });
 
-router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (req, res) => {
+// PUT - Randevunu yenilə
+router.put('/appointments/:id/:token', auth, receptionistAuth, async (req, res) => {
   try {
-    const { paymentMethod, paymentType, giftCardNumber } = req.body;
+    const { id } = req.params;
     
-    const updateData = { 
-      status: 'completed',
-      paymentType: paymentType || 'cash'
-    };
-
-    if (paymentType === 'gift_card' && giftCardNumber) {
-      // Validate and use gift card
-      const giftCard = await GiftCard.findOne({ cardNumber: giftCardNumber });
+    // Vaxt dəyişdirilirsə, konflikt yoxla
+    if (req.body.startTime || req.body.endTime || req.body.masseur) {
+      const currentAppointment = await Appointment.findById(id);
       
-      if (!giftCard) {
-        return res.status(400).json({ message: 'Hədiyyə kartı tapılmadı' });
-      }
-      
-      if (giftCard.isUsed) {
-        return res.status(400).json({ message: 'Bu hədiyyə kartı artıq istifadə olunub' });
-      }
-      
-      if (giftCard.expiryDate < new Date()) {
-        return res.status(400).json({ message: 'Bu hədiyyə kartının müddəti bitib' });
-      }
+      const updatedData = {
+        masseur: req.body.masseur || currentAppointment.masseur,
+        branch: req.body.branch || currentAppointment.branch,
+        startTime: req.body.startTime || currentAppointment.startTime,
+        endTime: req.body.endTime || currentAppointment.endTime
+      };
 
-      // Mark gift card as used
-      giftCard.isUsed = true;
-      giftCard.usedDate = new Date();
-      giftCard.usedInAppointment = req.params.id;
-      await giftCard.save();
+      const conflictingAppointment = await Appointment.findOne({
+        _id: { $ne: id },
+        masseur: updatedData.masseur,
+        branch: updatedData.branch,
+        status: { $ne: 'cancelled' },
+        $or: [
+          {
+            startTime: {
+              $lt: new Date(updatedData.endTime),
+              $gte: new Date(updatedData.startTime)
+            }
+          },
+          {
+            endTime: {
+              $gt: new Date(updatedData.startTime),
+              $lte: new Date(updatedData.endTime)
+            }
+          },
+          {
+            startTime: { $lte: new Date(updatedData.startTime) },
+            endTime: { $gte: new Date(updatedData.endTime) }
+          }
+        ]
+      });
 
-      updateData.giftCard = giftCard._id;
-      updateData.price = 0; // No cash payment needed
-    } else {
-      updateData.paymentMethod = paymentMethod;
+      if (conflictingAppointment) {
+        return res.status(400).json({ 
+          message: 'Bu vaxt aralığında masajist artıq məşğuldur!' 
+        });
+      }
     }
 
-    const appointment = await Appointment.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
-    ).populate('giftCard');
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      id,
+      req.body,
+      { new: true, runValidators: true }
+    )
+    .populate('customer', 'name phone')
+    .populate('masseur', 'name')
+    .populate('massageType', 'name')
+    .populate('branch', 'name');
 
-    res.json(appointment);
+    if (!updatedAppointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    res.json(updatedAppointment);
   } catch (error) {
+    console.error('Randevu güncəllə xətası:', error);
     res.status(400).json({ message: error.message });
+  }
+});
+
+// GET - BEH gəlirləri (advance payments by date)
+router.get('/advance-payments/date/:date/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const date = new Date(req.params.date);
+    const nextDay = new Date(date);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    const appointments = await Appointment.find({
+      branch: req.user.branch,
+      'advancePayment.paidAt': { $gte: date, $lt: nextDay },
+      'advancePayment.amount': { $gt: 0 }
+    })
+    .populate('customer', 'name phone')
+    .populate('masseur', 'name')
+    .populate('massageType', 'name');
+
+    res.json(appointments);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 

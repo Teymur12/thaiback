@@ -43,32 +43,78 @@ const appointmentSchema = new mongoose.Schema({
     enum: ['scheduled', 'completed', 'cancelled'],
     default: 'scheduled'
   },
- paymentMethod: {
+  
+  // BEH sistemi üçün əlavə sahələr
+  advancePayment: {
+    amount: {
+      type: Number,
+      default: 0
+    },
+    paymentMethod: {
+      type: String,
+      enum: ['cash', 'card', 'terminal'],
+    },
+    paidAt: {
+      type: Date
+    }
+  },
+  
+  remainingPayment: {
+    amount: {
+      type: Number,
+      default: 0
+    },
+    paymentMethod: {
+      type: String,
+      enum: ['cash', 'card', 'terminal'],
+    },
+    paidAt: {
+      type: Date
+    }
+  },
+  
+  // Köhnə payment method (yalnız tam ödəniş üçün)
+  paymentMethod: {
     type: String,
     enum: ['cash', 'card', 'terminal'],
     required: function() { 
-      return this.status === 'completed' && this.paymentType !== 'gift_card'; 
+      return this.status === 'completed' && 
+             this.paymentType !== 'gift_card' && 
+             !this.advancePayment.amount; // Beh yoxdursa tələb olunur
     }
   },
-  notes: {
-    type: String
-  },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-   giftCard: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'GiftCard'
-  },
+  
   paymentType: {
     type: String,
     enum: ['cash', 'card', 'terminal', 'gift_card'],
     required: function() { return this.status === 'completed'; }
   },
+  
+  giftCard: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'GiftCard'
+  },
+  
+  notes: {
+    type: String
+  },
+  
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }
 }, {
   timestamps: true
+});
+
+// Virtual field - tam ödənilib ya yox
+appointmentSchema.virtual('isFullyPaid').get(function() {
+  if (this.status !== 'completed') return false;
+  if (this.paymentType === 'gift_card') return true;
+  
+  const totalPaid = (this.advancePayment?.amount || 0) + (this.remainingPayment?.amount || 0);
+  return totalPaid >= this.price;
 });
 
 module.exports = mongoose.model('Appointment', appointmentSchema);
