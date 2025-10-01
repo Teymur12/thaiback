@@ -325,6 +325,31 @@ router.get('/receptionists/:token', auth, adminAuth, async (req, res) => {
   }
 });
 
+router.get('/masseurs/:masseurId/blocked-dates/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const { masseurId } = req.params;
+    
+    const masseur = await Masseur.findById(masseurId)
+      .populate('blockedDates.blockedBy', 'name role')
+      .populate('branch', 'name');
+    
+    if (!masseur) {
+      return res.status(404).json({ message: 'Masajist tapılmadı' });
+    }
+    
+    res.json({
+      masseur: {
+        _id: masseur._id,
+        name: masseur.name,
+        branch: masseur.branch
+      },
+      blockedDates: masseur.blockedDates.sort((a, b) => new Date(b.date) - new Date(a.date))
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Daily Reports - token param ilə
 router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
   try {

@@ -473,4 +473,134 @@ router.delete('/expenses/:id/:token', auth, receptionistAuth, async (req, res) =
   }
 });
 
+
+
+// POST - Masajisti müəyyən tarixə blokla
+router.post('/masseurs/:masseurId/block/:date/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { masseurId, date } = req.params;
+    const { reason } = req.body;
+    
+    const masseur = await Masseur.findOne({
+      _id: masseurId,
+      branch: req.user.branch
+    });
+    
+    if (!masseur) {
+      return res.status(404).json({ message: 'Masajist tapılmadı və ya icazəniz yoxdur' });
+    }
+    
+    // Tarix artıq bloklanıbmı yoxla
+    const blockDate = new Date(date);
+    blockDate.setHours(0, 0, 0, 0);
+    
+    const alreadyBlocked = masseur.blockedDates.some(blocked => {
+      const bd = new Date(blocked.date);
+      bd.setHours(0, 0, 0, 0);
+      return bd.getTime() === blockDate.getTime();
+    });
+    
+    if (alreadyBlocked) {
+      return res.status(400).json({ message: 'Bu tarix artıq bloklanıb' });
+    }
+    
+    // Həmin tarixdə mövcud randevular varsa xəbərdarlıq ver
+    const existingAppointments = await Appointment.find({
+      masseur: masseurId,
+      branch: req.user.branch,
+      startTime: {
+        $gte: blockDate,
+        $lt: new Date(blockDate.getTime() + 24 * 60 * 60 * 1000)
+      },
+      status: { $ne: 'cancelled' }
+    });
+    
+    if (existingAppointments.length > 0) {
+      return res.status(400).json({ 
+        message: `Bu tarixdə ${existingAppointments.length} aktiv randevu var! Əvvəlcə onları ləğv edin və ya digər masajistə köçürün.`,
+        appointments: existingAppointments
+      });
+    }
+    
+    // Tarixi blokla
+    masseur.blockedDates.push({
+      date: blockDate,
+      reason: reason || 'İstirahət günü',
+      blockedBy: req.user.userId
+    });
+    
+    await masseur.save();
+    
+    res.json({
+      message: 'Tarix uğurla bloklandı',
+      masseur
+    });
+  } catch (error) {
+    console.error('Block masseur error:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// DELETE - Masajistin blokunu götür
+router.delete('/masseurs/:masseurId/unblock/:date/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { masseurId, date } = req.params;
+    
+    const masseur = await Masseur.findOne({
+      _id: masseurId,
+      branch: req.user.branch
+    });
+    
+    if (!masseur) {
+      return res.status(404).json({ message: 'Masajist tapılmadı və ya icazəniz yoxdur' });
+    }
+    
+    const blockDate = new Date(date);
+    blockDate.setHours(0, 0, 0, 0);
+    
+    // Bloklanan tarixi tap və sil
+    masseur.blockedDates = masseur.blockedDates.filter(blocked => {
+      const bd = new Date(blocked.date);
+      bd.setHours(0, 0, 0, 0);
+      return bd.getTime() !== blockDate.getTime();
+    });
+    
+    await masseur.save();
+    
+    res.json({
+      message: 'Blok uğurla götürüldü',
+      masseur
+    });
+  } catch (error) {
+    console.error('Unblock masseur error:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// GET - Masajistin bloklanmış tarixlərini gör
+router.get('/masseurs/:masseurId/blocked-dates/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { masseurId } = req.params;
+    
+    const masseur = await Masseur.findOne({
+      _id: masseurId,
+      branch: req.user.branch
+    }).populate('blockedDates.blockedBy', 'name');
+    
+    if (!masseur) {
+      return res.status(404).json({ message: 'Masajist tapılmadı' });
+    }
+    
+    res.json({
+      masseur: {
+        _id: masseur._id,
+        name: masseur.name
+      },
+      blockedDates: masseur.blockedDates
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
