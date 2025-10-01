@@ -8,6 +8,23 @@ const Expense = require('../models/Expense'); // Bu sətr əlavə edilməli idi!
 const { auth, receptionistAuth } = require('../middleware/auth');
 const router = express.Router();
 
+// routes/receptionist.js - faylın yuxarısında
+function generateWhatsAppLink(phone, message) {
+  let cleanPhone = phone.replace(/[^0-9]/g, '');
+  
+  // Əgər 994 ilə başlamırsa
+  if (!cleanPhone.startsWith('994')) {
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '994' + cleanPhone.substring(1);
+    } else {
+      cleanPhone = '994' + cleanPhone;
+    }
+  }
+  
+  const encodedMessage = encodeURIComponent(message);
+  return `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
+}
+
 // Customers - token param ilə
 router.post('/customers/:token', auth, receptionistAuth, async (req, res) => {
   try {
@@ -154,7 +171,10 @@ router.post('/appointments/:token', auth, receptionistAuth, async (req, res) => 
 router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { paymentMethod, paymentType, giftCardNumber } = req.body;
-    const appointment = await Appointment.findById(req.params.id);
+    
+    // ✅ Customer məlumatını populate et
+    const appointment = await Appointment.findById(req.params.id)
+      .populate('customer'); // ❗ Bunu əlavə edin
 
     if (!appointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
@@ -201,8 +221,7 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
         };
       }
       
-      // paymentType beh + nağd/kart qarışığı kimi qeyd et
-      updateData.paymentType = 'mixed'; // Və ya ayrıca 'advance' kimi
+      updateData.paymentType = 'mixed';
     } 
     // Tam ödəniş (beh yoxdur)
     else {
@@ -215,7 +234,21 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
       { new: true }
     ).populate('customer masseur massageType branch giftCard');
 
-    res.json(updatedAppointment);
+    // ✅ WhatsApp linki yarad (müştəri məlumatı varsa)
+    let whatsappLink = null;
+    if (updatedAppointment.customer && updatedAppointment.customer.phone) {
+      whatsappLink = generateWhatsAppLink(
+        updatedAppointment.customer.phone,
+        `Salam ${updatedAppointment.customer.name}! Xidmətimizdən razı qaldınızmı? 😊`
+      );
+    }
+
+    // ✅ Response-da appointment + whatsapp link
+    res.json({
+      ...updatedAppointment.toObject(), // ❗ toObject() əlavə edin
+      whatsappLink
+    });
+
   } catch (error) {
     console.error('Complete appointment error:', error);
     res.status(400).json({ message: error.message });
