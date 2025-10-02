@@ -10,20 +10,26 @@ const router = express.Router();
 
 // routes/receptionist.js - faylın yuxarısında
 function generateWhatsAppLink(phone, message) {
+  // Bütün qeyri-rəqəm simvolları sil (boşluq, tire, mötərizə, + və s.)
   let cleanPhone = phone.replace(/[^0-9]/g, '');
   
   // Əgər 994 ilə başlamırsa
   if (!cleanPhone.startsWith('994')) {
+    // Əgər 0 ilə başlayırsa (məs: 0507892134)
     if (cleanPhone.startsWith('0')) {
       cleanPhone = '994' + cleanPhone.substring(1);
-    } else {
+    } 
+    // Əgər birbaşa operator kodu ilə başlayırsa (məs: 507892134)
+    else {
       cleanPhone = '994' + cleanPhone;
     }
   }
   
+  // WhatsApp linkini yarat
   const encodedMessage = encodeURIComponent(message);
   return `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
 }
+  
 
 // Customers - token param ilə
 router.post('/customers/:token', auth, receptionistAuth, async (req, res) => {
@@ -239,7 +245,7 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
     if (updatedAppointment.customer && updatedAppointment.customer.phone) {
       whatsappLink = generateWhatsAppLink(
         updatedAppointment.customer.phone,
-        `Salam ${updatedAppointment.customer.name}! Xidmətimizdən razı qaldınızmı? 😊`
+        `Salam! Xidmətimizdən razı qaldınızmı? 😊 Sizə göstərilən xidməti 1-5 arası bir rəqəmlə qiymətləndirməyinizi xahiş edirik.`
       );
     }
 
