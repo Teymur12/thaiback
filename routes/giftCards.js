@@ -24,7 +24,6 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
       cardNumber,
       massageType,
       duration,
-      originalPrice,
       purchasedBy,
       notes
     } = req.body;
@@ -46,6 +45,9 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
       return res.status(400).json({ message: 'Bu masaj növü üçün səhv müddət' });
     }
 
+    // Automatically calculate gift card price
+    const originalPrice = validDuration.price + 5;
+
     // Validate customer
     const customer = await Customer.findById(purchasedBy);
     if (!customer) {
@@ -56,7 +58,7 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
       cardNumber,
       massageType,
       duration,
-      originalPrice,
+      originalPrice, // Avtomatik hesablanmış qiymət
       branch: req.user.branch,
       purchasedBy,
       notes,

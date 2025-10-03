@@ -12,7 +12,6 @@ app.use(
     origin: [
       "http://localhost:3000", // Lokal üçün
       "http://localhost:8081", // Lokal üçün
-
       "https://thaifront-1cvf.vercel.app" // Vercel frontend üçün
     ],
     credentials: true,

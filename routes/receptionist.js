@@ -642,4 +642,204 @@ router.get('/masseurs/:masseurId/blocked-dates/:token', auth, receptionistAuth, 
   }
 });
 
+// POST - Masajisti həftənin müəyyən günlərində avtomatik blokla
+router.post('/masseurs/:masseurId/block-weekly/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { masseurId } = req.params;
+    const { weekDays, reason, startDate, endDate } = req.body;
+    // weekDays: [0, 1, 2] - 0=Bazar, 1=Bazar ertəsi, 2=Çərşənbə axşamı və s.
+    
+    const masseur = await Masseur.findOne({
+      _id: masseurId,
+      branch: req.user.branch
+    });
+    
+    if (!masseur) {
+      return res.status(404).json({ message: 'Masajist tapılmadı və ya icazəniz yoxdur' });
+    }
+    
+    if (!weekDays || !Array.isArray(weekDays) || weekDays.length === 0) {
+      return res.status(400).json({ message: 'Həftənin günlərini seçin' });
+    }
+    
+    // Başlanğıc və son tarix
+    const start = startDate ? new Date(startDate) : new Date();
+    const end = endDate ? new Date(endDate) : new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 il
+    
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+    
+    const blockedDates = [];
+    const conflicts = [];
+    
+    // Başlanğıcdan sona qədər bütün günləri yoxla
+    let currentDate = new Date(start);
+    
+    while (currentDate <= end) {
+      const dayOfWeek = currentDate.getDay();
+      
+      // Əgər seçilmiş günlərdəndirsə
+      if (weekDays.includes(dayOfWeek)) {
+        const dateToBlock = new Date(currentDate);
+        
+        // Artıq bloklanıbmı yoxla
+        const alreadyBlocked = masseur.blockedDates.some(blocked => {
+          const bd = new Date(blocked.date);
+          bd.setHours(0, 0, 0, 0);
+          return bd.getTime() === dateToBlock.getTime();
+        });
+        
+        if (!alreadyBlocked) {
+          // Həmin tarixdə aktiv randevu varsa
+          const existingAppointments = await Appointment.find({
+            masseur: masseurId,
+            branch: req.user.branch,
+            startTime: {
+              $gte: dateToBlock,
+              $lt: new Date(dateToBlock.getTime() + 24 * 60 * 60 * 1000)
+            },
+            status: { $ne: 'cancelled' }
+          }).populate('customer', 'name phone');
+          
+          if (existingAppointments.length > 0) {
+            conflicts.push({
+              date: dateToBlock.toISOString().split('T')[0],
+              appointments: existingAppointments
+            });
+          } else {
+            blockedDates.push({
+              date: dateToBlock,
+              reason: reason || 'Həftəlik istirahət günü',
+              blockedBy: req.user.userId
+            });
+          }
+        }
+      }
+      
+      // Növbəti günə keç
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Konflikt varsa xəbərdarlıq ver
+    if (conflicts.length > 0) {
+      return res.status(400).json({ 
+        message: `${conflicts.length} tarixdə aktiv randevular var!`,
+        conflicts,
+        suggestion: 'Əvvəlcə bu randevuları ləğv edin və ya digər masajistə köçürün.'
+      });
+    }
+    
+    // Bütün tarixləri blokla
+    masseur.blockedDates.push(...blockedDates);
+    await masseur.save();
+    
+    res.json({
+      message: `${blockedDates.length} tarix uğurla bloklandı`,
+      blockedCount: blockedDates.length,
+      masseur
+    });
+  } catch (error) {
+    console.error('Block weekly error:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// DELETE - Həftəlik blokları götür
+router.delete('/masseurs/:masseurId/unblock-weekly/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { masseurId } = req.params;
+    const { weekDays, startDate, endDate } = req.body;
+    
+    const masseur = await Masseur.findOne({
+      _id: masseurId,
+      branch: req.user.branch
+    });
+    
+    if (!masseur) {
+      return res.status(404).json({ message: 'Masajist tapılmadı və ya icazəniz yoxdur' });
+    }
+    
+    if (!weekDays || !Array.isArray(weekDays) || weekDays.length === 0) {
+      return res.status(400).json({ message: 'Həftənin günlərini seçin' });
+    }
+    
+    const start = startDate ? new Date(startDate) : new Date();
+    const end = endDate ? new Date(endDate) : new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000);
+    
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+    
+    let removedCount = 0;
+    
+    // Filterlə və sil
+    masseur.blockedDates = masseur.blockedDates.filter(blocked => {
+      const bd = new Date(blocked.date);
+      bd.setHours(0, 0, 0, 0);
+      const dayOfWeek = bd.getDay();
+      
+      // Əgər tarix aralığındadırsa və seçilmiş günlərdəndirsə
+      if (bd >= start && bd <= end && weekDays.includes(dayOfWeek)) {
+        removedCount++;
+        return false; // Sil
+      }
+      return true; // Saxla
+    });
+    
+    await masseur.save();
+    
+    res.json({
+      message: `${removedCount} tarix blokdan çıxarıldı`,
+      removedCount,
+      masseur
+    });
+  } catch (error) {
+    console.error('Unblock weekly error:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// GET - Masajistin həftəlik blok statusunu gör
+router.get('/masseurs/:masseurId/weekly-schedule/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { masseurId } = req.params;
+    
+    const masseur = await Masseur.findOne({
+      _id: masseurId,
+      branch: req.user.branch
+    });
+    
+    if (!masseur) {
+      return res.status(404).json({ message: 'Masajist tapılmadı' });
+    }
+    
+    // Həftənin hər günü üçün statistika
+    const weeklyStats = {
+      0: { name: 'Bazar', blockedCount: 0, dates: [] },
+      1: { name: 'Bazar ertəsi', blockedCount: 0, dates: [] },
+      2: { name: 'Çərşənbə axşamı', blockedCount: 0, dates: [] },
+      3: { name: 'Çərşənbə', blockedCount: 0, dates: [] },
+      4: { name: 'Cümə axşamı', blockedCount: 0, dates: [] },
+      5: { name: 'Cümə', blockedCount: 0, dates: [] },
+      6: { name: 'Şənbə', blockedCount: 0, dates: [] }
+    };
+    
+    masseur.blockedDates.forEach(blocked => {
+      const dayOfWeek = new Date(blocked.date).getDay();
+      weeklyStats[dayOfWeek].blockedCount++;
+      weeklyStats[dayOfWeek].dates.push(blocked.date);
+    });
+    
+    res.json({
+      masseur: {
+        _id: masseur._id,
+        name: masseur.name
+      },
+      weeklyStats,
+      totalBlocked: masseur.blockedDates.length
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
