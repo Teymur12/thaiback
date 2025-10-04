@@ -7,8 +7,103 @@ const MassageType = require('../models/MassageType');
 const Appointment = require('../models/Appointment');
 const Expense = require('../models/Expense');
 const GiftCard = require('../models/GiftCard');
+const Customer = require('../models/Customer'); // ❗ ƏLAVƏ EDİLDİ
 const { auth, adminAuth } = require('../middleware/auth');
 const router = express.Router();
+
+// WhatsApp link generator - ❗ ƏLAVƏ EDİLDİ
+function generateWhatsAppLink(phone, message) {
+  let cleanPhone = phone.replace(/[^0-9]/g, '');
+  
+  if (!cleanPhone.startsWith('994')) {
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '994' + cleanPhone.substring(1);
+    } else {
+      cleanPhone = '994' + cleanPhone;
+    }
+  }
+  
+  const encodedMessage = encodeURIComponent(message);
+  return `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
+}
+
+// CUSTOMER ROUTES - ❗ ƏLAVƏ EDİLDİ
+
+// POST - Yeni müştəri
+router.post('/customers/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const customer = new Customer(req.body);
+    await customer.save();
+    res.status(201).json(customer);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// GET - Bütün müştərilər
+router.get('/customers/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const customers = await Customer.find();
+    res.json(customers);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET - Telefona görə müştəri axtar
+router.get('/customers/:token/search/phone/:phone', auth, adminAuth, async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const customer = await Customer.findOne({ phone });
+    
+    if (!customer) {
+      return res.status(404).json({ message: 'Bu telefon numarasına ait müşteri bulunamadı' });
+    }
+    
+    res.json(customer);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// PUT - Müştəri yenilə
+router.put('/customers/:id/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updatedCustomer = await Customer.findByIdAndUpdate(
+      id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    
+    if (!updatedCustomer) {
+      return res.status(404).json({ message: 'Müşteri bulunamadı' });
+    }
+    
+    res.json(updatedCustomer);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// DELETE - Müştəri sil
+router.delete('/customers/:id/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedCustomer = await Customer.findByIdAndDelete(id);
+    
+    if (!deletedCustomer) {
+      return res.status(404).json({ message: 'Müşteri bulunamadı' });
+    }
+    
+    res.json({
+      message: 'Müşteri başarıyla silindi',
+      deletedCustomer
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 
 // Branches - token param ilə
 router.post('/branches/:token', auth, adminAuth, async (req, res) => {
@@ -109,7 +204,6 @@ router.put('/masseurs/:id/:token', auth, adminAuth, async (req, res) => {
   }
 });
 
-
 // Massage Types - token param ilə
 router.post('/massage-types/:token', auth, adminAuth, async (req, res) => {
   try {
@@ -150,7 +244,6 @@ router.put('/massage-types/:id/:token', auth, adminAuth, async (req, res) => {
   }
 });
 
-// PUT - Belirli bir duration'ı güncelle
 router.put('/massage-types/:id/:token/durations/:durationId', auth, adminAuth, async (req, res) => {
   try {
     const { id, durationId } = req.params;
@@ -176,7 +269,6 @@ router.put('/massage-types/:id/:token/durations/:durationId', auth, adminAuth, a
   }
 });
 
-// DELETE - Belirli bir duration'ı sil
 router.delete('/massage-types/:id/:token/durations/:durationId', auth, adminAuth, async (req, res) => {
   try {
     const { id, durationId } = req.params;
@@ -203,7 +295,6 @@ router.delete('/massage-types/:id/:token/durations/:durationId', auth, adminAuth
   }
 });
 
-// DELETE - Masaj türü sil
 router.delete('/massage-types/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -237,35 +328,29 @@ router.post('/receptionists/:token', auth, adminAuth, async (req, res) => {
   }
 });
 
-// PUT - Resepsiyon personeli güncelle
 router.put('/receptionists/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
     
-    // Role'ü receptionist olarak sabit tut
     updateData.role = 'receptionist';
     
-    // Eğer password güncelleniyor ve boş değilse, hash'lenmesi için pre('save') middleware'ini tetikle
     if (updateData.password && updateData.password.trim() !== '') {
       const user = await User.findById(id);
       if (!user || user.role !== 'receptionist') {
         return res.status(404).json({ message: 'Resepsiyon personeli bulunamadı' });
       }
       
-      // Password'ü güncelle ve save() ile hash'lensin
       Object.assign(user, updateData);
       await user.save();
       
-      // Password'ü response'dan çıkar
       const userResponse = user.toObject();
       delete userResponse.password;
       
       res.json(userResponse);
     } else {
-      // Password güncellenmiyor, normal update
       if (updateData.password === '') {
-        delete updateData.password; // Boş password'ü silme
+        delete updateData.password;
       }
       
       const updatedReceptionist = await User.findOneAndUpdate(
@@ -278,7 +363,6 @@ router.put('/receptionists/:id/:token', auth, adminAuth, async (req, res) => {
         return res.status(404).json({ message: 'Resepsiyon personeli bulunamadı' });
       }
       
-      // Password'ü response'dan çıkar
       const userResponse = updatedReceptionist.toObject();
       delete userResponse.password;
       
@@ -289,7 +373,6 @@ router.put('/receptionists/:id/:token', auth, adminAuth, async (req, res) => {
   }
 });
 
-// DELETE - Resepsiyon personeli sil
 router.delete('/receptionists/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -303,7 +386,6 @@ router.delete('/receptionists/:id/:token', auth, adminAuth, async (req, res) => 
       return res.status(404).json({ message: 'Resepsiyon personeli bulunamadı' });
     }
     
-    // Password'ü response'dan çıkar
     const userResponse = deletedReceptionist.toObject();
     delete userResponse.password;
     
@@ -357,24 +439,20 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
     const nextDay = new Date(date);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    // Completed appointments (bugünkü tamamlanmış randevular)
     const appointments = await Appointment.find({
-      startTime: { $gte: date, $lt: nextDay }, // Masaja gəldiyi gün
+      startTime: { $gte: date, $lt: nextDay },
       status: 'completed'
     }).populate('branch masseur massageType customer');
 
-    // Bugün BEH verilən randevular (gələcək tarixlərdə masaja gələcəklər)
     const advancePayments = await Appointment.find({
       'advancePayment.paidAt': { $gte: date, $lt: nextDay },
       'advancePayment.amount': { $gt: 0 }
     }).populate('branch masseur massageType customer');
 
-    // Expenses
     const expenses = await Expense.find({
       date: { $gte: date, $lt: nextDay }
     }).populate('branch');
 
-    // Gift card sales
     const giftCardSales = await GiftCard.find({
       purchaseDate: { $gte: date, $lt: nextDay }
     }).populate('branch massageType purchasedBy');
@@ -384,7 +462,6 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       branches: {}
     };
 
-    // Helper function - filial strukturunu yaradır
     const initBranch = (branchId, branchName) => {
       if (!report.branches[branchId]) {
         report.branches[branchId] = {
@@ -395,7 +472,7 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
             terminal: 0,
             total: 0
           },
-          advancePayments: { // BEH gəlirləri
+          advancePayments: {
             cash: 0,
             card: 0,
             terminal: 0,
@@ -418,7 +495,6 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       }
     };
 
-    // 1. BEH (Advance Payments) - bugün verilən behləri əlavə et
     advancePayments.forEach(appointment => {
       const branchId = appointment.branch._id.toString();
       initBranch(branchId, appointment.branch.name);
@@ -431,19 +507,15 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       report.branches[branchId].advancePayments.count++;
     });
 
-    // 2. Completed Appointments - bugün tamamlanan randevular
     appointments.forEach(appointment => {
       const branchId = appointment.branch._id.toString();
       initBranch(branchId, appointment.branch.name);
 
-      // Əgər gift card ilə ödənilibs
       if (appointment.paymentType === 'gift_card') {
-        // Gift card hesabata daxil edilməz (ayrıca gift card satışı var)
         report.branches[branchId].appointments++;
         return;
       }
 
-      // Əgər beh verilib və bugün qalan məbləğ ödənilibsə
       if (appointment.advancePayment?.amount > 0 && appointment.remainingPayment?.amount > 0) {
         const remAmount = appointment.remainingPayment.amount;
         const remMethod = appointment.remainingPayment.paymentMethod;
@@ -452,7 +524,6 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
         report.branches[branchId].revenue.total += remAmount;
         report.branches[branchId].appointments++;
       } 
-      // Əgər tam ödəniş (beh yoxdur)
       else if (!appointment.advancePayment?.amount || appointment.advancePayment.amount === 0) {
         const paymentMethod = appointment.paymentMethod;
         const price = appointment.price;
@@ -461,13 +532,11 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
         report.branches[branchId].revenue.total += price;
         report.branches[branchId].appointments++;
       }
-      // Əgər yalnız beh verilib, hələ gəlməyib (bu halda startTime bu gün olmamalı)
       else {
         report.branches[branchId].appointments++;
       }
     });
 
-    // 3. Gift card satışları
     giftCardSales.forEach(giftCard => {
       const branchId = giftCard.branch._id.toString();
       initBranch(branchId, giftCard.branch.name);
@@ -478,7 +547,6 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       report.branches[branchId].giftCardSales.count++;
     });
 
-    // 4. Xərclər
     expenses.forEach(expense => {
       const branchId = expense.branch._id.toString();
       if (report.branches[branchId]) {
@@ -491,16 +559,13 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       }
     });
 
-    // 5. Ümumi hesablamalar
     Object.keys(report.branches).forEach(branchId => {
       const branch = report.branches[branchId];
       
-      // Ümumi gəlir = masaj gəlirləri + beh gəlirləri + gift card satışları
       branch.totalRevenue = branch.revenue.total + 
                             branch.advancePayments.total + 
                             branch.giftCardSales.total;
       
-      // Xalis gəlir = ümumi gəlir - xərclər
       branch.netRevenue = branch.totalRevenue - branch.expenses.total;
     });
 
@@ -511,6 +576,200 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
   }
 });
 
+// APPOINTMENT ROUTES
 
+router.post('/appointments/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const appointmentData = {
+      ...req.body
+      // ❗ branch və createdBy req.body-dən gəlir (admin seçir)
+    };
+
+    if (req.body.advancePayment && req.body.advancePayment.amount > 0) {
+      appointmentData.advancePayment = {
+        amount: req.body.advancePayment.amount,
+        paymentMethod: req.body.advancePayment.paymentMethod,
+        paidAt: new Date()
+      };
+    }
+
+    const appointment = new Appointment(appointmentData);
+    await appointment.save();
+    
+    const populatedAppointment = await Appointment.findById(appointment._id)
+      .populate('customer masseur massageType branch');
+    
+    res.status(201).json(populatedAppointment);
+  } catch (error) {
+    console.error('Appointment creation error:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+router.put('/appointments/:id/complete/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const { paymentMethod, paymentType, giftCardNumber } = req.body;
+    
+    const appointment = await Appointment.findById(req.params.id)
+      .populate('customer');
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    const updateData = { 
+      status: 'completed',
+      paymentType: paymentType || 'cash'
+    };
+
+    if (paymentType === 'gift_card' && giftCardNumber) {
+      const giftCard = await GiftCard.findOne({ cardNumber: giftCardNumber });
+      
+      if (!giftCard) {
+        return res.status(400).json({ message: 'Hədiyyə kartı tapılmadı' });
+      }
+      
+      if (giftCard.isUsed) {
+        return res.status(400).json({ message: 'Bu hədiyyə kartı artıq istifadə olunub' });
+      }
+      
+      if (giftCard.expiryDate < new Date()) {
+        return res.status(400).json({ message: 'Bu hədiyyə kartının müddəti bitib' });
+      }
+
+      giftCard.isUsed = true;
+      giftCard.usedDate = new Date();
+      giftCard.usedInAppointment = req.params.id;
+      await giftCard.save();
+
+      updateData.giftCard = giftCard._id;
+      updateData.price = 0;
+    } 
+    else if (appointment.advancePayment && appointment.advancePayment.amount > 0) {
+      const remainingAmount = appointment.price - appointment.advancePayment.amount;
+      
+      if (remainingAmount > 0) {
+        updateData.remainingPayment = {
+          amount: remainingAmount,
+          paymentMethod: paymentMethod,
+          paidAt: new Date()
+        };
+      }
+      
+      updateData.paymentType = 'mixed';
+    } 
+    else {
+      updateData.paymentMethod = paymentMethod;
+    }
+
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true }
+    ).populate('customer masseur massageType branch giftCard');
+
+    let whatsappLink = null;
+    if (updatedAppointment.customer && updatedAppointment.customer.phone) {
+      whatsappLink = generateWhatsAppLink(
+        updatedAppointment.customer.phone,
+        `Salam! Xidmətimizdən razı qaldınızmı? 😊 Sizə göstərilən xidməti 1-5 arası bir rəqəmlə qiymətləndirməyinizi xahiş edirik.`
+      );
+    }
+
+    res.json({
+      ...updatedAppointment.toObject(),
+      whatsappLink
+    });
+
+  } catch (error) {
+    console.error('Complete appointment error:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// ❗ DƏYİŞDİRİLDİ - Admin bütün filialların randevularını görür
+router.get('/appointments/:date/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const date = new Date(req.params.date);
+    const nextDay = new Date(date);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    // ❗ branch filter yoxdur
+    const appointments = await Appointment.find({
+      startTime: { $gte: date, $lt: nextDay }
+    }).populate('customer masseur massageType branch'); // branch populate edildi
+
+    res.json(appointments);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.put('/appointments/:id/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (req.body.startTime || req.body.endTime || req.body.masseur) {
+      const currentAppointment = await Appointment.findById(id);
+      
+      const updatedData = {
+        masseur: req.body.masseur || currentAppointment.masseur,
+        branch: req.body.branch || currentAppointment.branch,
+        startTime: req.body.startTime || currentAppointment.startTime,
+        endTime: req.body.endTime || currentAppointment.endTime
+      };
+
+      const conflictingAppointment = await Appointment.findOne({
+        _id: { $ne: id },
+        masseur: updatedData.masseur,
+        branch: updatedData.branch,
+        status: { $ne: 'cancelled' },
+        $or: [
+          {
+            startTime: {
+              $lt: new Date(updatedData.endTime),
+              $gte: new Date(updatedData.startTime)
+            }
+          },
+          {
+            endTime: {
+              $gt: new Date(updatedData.startTime),
+              $lte: new Date(updatedData.endTime)
+            }
+          },
+          {
+            startTime: { $lte: new Date(updatedData.startTime) },
+            endTime: { $gte: new Date(updatedData.endTime) }
+          }
+        ]
+      });
+
+      if (conflictingAppointment) {
+        return res.status(400).json({ 
+          message: 'Bu vaxt aralığında masajist artıq məşğuldur!' 
+        });
+      }
+    }
+
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      id,
+      req.body,
+      { new: true, runValidators: true }
+    )
+    .populate('customer', 'name phone')
+    .populate('masseur', 'name')
+    .populate('massageType', 'name')
+    .populate('branch', 'name');
+
+    if (!updatedAppointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    res.json(updatedAppointment);
+  } catch (error) {
+    console.error('Randevu güncəllə xətası:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
 
 module.exports = router;
