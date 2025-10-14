@@ -46,7 +46,7 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
     }
 
     // Automatically calculate gift card price
-    const originalPrice = validDuration.price + 5;
+    const originalPrice = validDuration.price + 4;
 
     // Validate customer
     const customer = await Customer.findById(purchasedBy);
