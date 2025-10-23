@@ -280,6 +280,7 @@ router.get('/appointments/:date/:token', auth, receptionistAuth, async (req, res
 });
 
 // PUT - Randevunu yenilə
+// PUT - Randevunu yenilə
 router.put('/appointments/:id/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -288,6 +289,10 @@ router.put('/appointments/:id/:token', auth, receptionistAuth, async (req, res) 
     if (req.body.startTime || req.body.endTime || req.body.masseur) {
       const currentAppointment = await Appointment.findById(id);
       
+      if (!currentAppointment) {
+        return res.status(404).json({ message: 'Randevu tapılmadı' });
+      }
+      
       const updatedData = {
         masseur: req.body.masseur || currentAppointment.masseur,
         branch: req.body.branch || currentAppointment.branch,
@@ -295,25 +300,29 @@ router.put('/appointments/:id/:token', auth, receptionistAuth, async (req, res) 
         endTime: req.body.endTime || currentAppointment.endTime
       };
 
+      // ✅ DÜZƏLİŞ: _id-ni query-nin əsas hissəsində exclude et
       const conflictingAppointment = await Appointment.findOne({
-        _id: { $ne: id },
+        _id: { $ne: id }, // ❗ Burada düzgün istifadə olunur
         masseur: updatedData.masseur,
         branch: updatedData.branch,
         status: { $ne: 'cancelled' },
         $or: [
           {
+            // Yeni randevu başlayır, köhnə davam edir
             startTime: {
               $lt: new Date(updatedData.endTime),
               $gte: new Date(updatedData.startTime)
             }
           },
           {
+            // Yeni randevu davam edir, köhnə başlayır
             endTime: {
               $gt: new Date(updatedData.startTime),
               $lte: new Date(updatedData.endTime)
             }
           },
           {
+            // Yeni randevu tamamilə köhnənin içindədir
             startTime: { $lte: new Date(updatedData.startTime) },
             endTime: { $gte: new Date(updatedData.endTime) }
           }
@@ -322,7 +331,12 @@ router.put('/appointments/:id/:token', auth, receptionistAuth, async (req, res) 
 
       if (conflictingAppointment) {
         return res.status(400).json({ 
-          message: 'Bu vaxt aralığında masajist artıq məşğuldur!' 
+          message: 'Bu vaxt aralığında masajist artıq məşğuldur!',
+          conflictingAppointment: {
+            _id: conflictingAppointment._id,
+            startTime: conflictingAppointment.startTime,
+            endTime: conflictingAppointment.endTime
+          }
         });
       }
     }
