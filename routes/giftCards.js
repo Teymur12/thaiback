@@ -17,7 +17,6 @@ router.get('/generate-number/:token', auth, async (req, res) => {
   }
 });
 
-// Create gift card (Receptionist)
 router.post('/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const {
@@ -25,16 +24,15 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
       massageType,
       duration,
       purchasedBy,
+      paymentMethod,  
       notes
     } = req.body;
 
-    // Check if card number already exists
     const existingCard = await GiftCard.findOne({ cardNumber });
     if (existingCard) {
       return res.status(400).json({ message: 'Bu kart nömrəsi artıq mövcuddur' });
     }
 
-    // Validate massage type and duration
     const massageTypeDoc = await MassageType.findById(massageType);
     if (!massageTypeDoc) {
       return res.status(400).json({ message: 'Masaj növü tapılmadı' });
@@ -45,10 +43,8 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
       return res.status(400).json({ message: 'Bu masaj növü üçün səhv müddət' });
     }
 
-    // Automatically calculate gift card price
     const originalPrice = validDuration.price + 4;
 
-    // Validate customer
     const customer = await Customer.findById(purchasedBy);
     if (!customer) {
       return res.status(400).json({ message: 'Müştəri tapılmadı' });
@@ -58,7 +54,8 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
       cardNumber,
       massageType,
       duration,
-      originalPrice, // Avtomatik hesablanmış qiymət
+      originalPrice,
+      paymentMethod: paymentMethod || 'cash', 
       branch: req.user.branch,
       purchasedBy,
       notes,
@@ -76,6 +73,39 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
     res.status(201).json(populatedCard);
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+});
+
+// Mövcud routes-dan sonra əlavə edin
+
+// Get gift cards by date (Receptionist)
+router.get('/date/:date/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { date } = req.params;
+    
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    
+    const endDate = new Date(date);
+    endDate.setHours(23, 59, 59, 999);
+
+    const giftCards = await GiftCard.find({
+      branch: req.user.branch,
+      purchaseDate: {
+        $gte: startDate,
+        $lte: endDate
+      }
+    })
+      .populate('massageType', 'name durations')
+      .populate('purchasedBy', 'name phone')
+      .populate('usedBy', 'name phone')
+      .populate('branch', 'name')
+      .populate('createdBy', 'name')
+      .sort({ purchaseDate: 1 });
+
+    res.json(giftCards);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 
