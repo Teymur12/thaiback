@@ -1,4 +1,3 @@
-// models/GiftCard.js
 const mongoose = require('mongoose');
 
 const giftCardSchema = new mongoose.Schema({
@@ -14,11 +13,16 @@ const giftCardSchema = new mongoose.Schema({
   },
   duration: {
     type: Number,
-    required: true // dəqiqə ilə
+    required: true
   },
   originalPrice: {
     type: Number,
     required: true
+  },
+  paymentMethod: {  // YENİ SAHƏ
+    type: String,
+    enum: ['cash', 'card', 'terminal'],
+    default: 'cash'
   },
   branch: {
     type: mongoose.Schema.Types.ObjectId,
@@ -61,17 +65,15 @@ const giftCardSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for faster queries
 giftCardSchema.index({ cardNumber: 1 });
 giftCardSchema.index({ branch: 1, isUsed: 1 });
+giftCardSchema.index({ branch: 1, purchaseDate: 1 }); // YENİ INDEX
 
-// Generate unique card number
 giftCardSchema.statics.generateCardNumber = async function() {
   let cardNumber;
   let exists = true;
   
   while (exists) {
-    // Generate 12-digit card number
     cardNumber = 'GC' + Math.random().toString(36).substr(2, 10).toUpperCase();
     const existingCard = await this.findOne({ cardNumber });
     exists = !!existingCard;
