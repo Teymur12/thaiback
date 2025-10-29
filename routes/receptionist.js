@@ -174,24 +174,33 @@ router.post('/appointments/:token', auth, receptionistAuth, async (req, res) => 
 });
 
 // PUT - Randevunu tamamla (Qalan məbləği ödə)
+// PUT - Randevunu tamamla (Qalan məbləği ödə + Bahşiş)
 router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (req, res) => {
   try {
-    const { paymentMethod, paymentType, giftCardNumber } = req.body;
+    const { 
+      paymentType, 
+      giftCardNumber,
+      // ✅ YENİ - Qarışıq ödəniş üçün
+      payments, // { cash: 50, card: 30, terminal: 20 }
+      // ✅ YENİ - Bahşiş üçün
+      tips // { cash: 10, card: 5 }
+    } = req.body;
     
-    // ✅ Customer məlumatını populate et
+    // Customer məlumatını populate et
     const appointment = await Appointment.findById(req.params.id)
-      .populate('customer'); // ❗ Bunu əlavə edin
+      .populate('customer');
 
     if (!appointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
     }
 
     const updateData = { 
-      status: 'completed',
-      paymentType: paymentType || 'cash'
+      status: 'completed'
     };
 
-    // Gift Card ilə ödəniş
+    // ========== ƏSAS ÖDƏNİŞ ==========
+    
+    // 1️⃣ Gift Card ilə ödəniş
     if (paymentType === 'gift_card' && giftCardNumber) {
       const giftCard = await GiftCard.findOne({ cardNumber: giftCardNumber });
       
@@ -213,34 +222,110 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
       await giftCard.save();
 
       updateData.giftCard = giftCard._id;
+      updateData.paymentType = 'gift_card';
       updateData.price = 0;
     } 
-    // Əgər əvvəlcədən beh verilib
+    
+    // 2️⃣ BEH verilib, indi qalan ödənilir
     else if (appointment.advancePayment && appointment.advancePayment.amount > 0) {
       const remainingAmount = appointment.price - appointment.advancePayment.amount;
       
       if (remainingAmount > 0) {
+        // Qarışıq ödəniş (nağd + kart + terminal)
+        if (payments && typeof payments === 'object') {
+          const totalPayment = (payments.cash || 0) + (payments.card || 0) + (payments.terminal || 0);
+          
+          // Yoxla ki, ödəniş məbləği düzgündür
+          if (Math.abs(totalPayment - remainingAmount) > 0.01) {
+            return res.status(400).json({ 
+              message: `Ödəniş məbləği düzgün deyil. Ödənilməli: ${remainingAmount} AZN, Ödənilən: ${totalPayment} AZN` 
+            });
+          }
+          
+          updateData.remainingPayment = {
+            cash: payments.cash || 0,
+            card: payments.card || 0,
+            terminal: payments.terminal || 0,
+            paidAt: new Date()
+          };
+          updateData.paymentType = 'mixed';
+          updateData.paymentMethod = 'mixed';
+        } 
+        // Tək üsulla ödəniş
+        else {
+          const method = req.body.paymentMethod;
+          if (!method) {
+            return res.status(400).json({ message: 'Ödəniş üsulu göstərilməlidir' });
+          }
+          
+          updateData.remainingPayment = {
+            [method]: remainingAmount,
+            paidAt: new Date()
+          };
+          updateData.paymentType = method;
+          updateData.paymentMethod = method;
+        }
+      }
+    } 
+    
+    // 3️⃣ Tam ödəniş (beh yoxdur)
+    else {
+      // Qarışıq ödəniş
+      if (payments && typeof payments === 'object') {
+        const totalPayment = (payments.cash || 0) + (payments.card || 0) + (payments.terminal || 0);
+        
+        if (Math.abs(totalPayment - appointment.price) > 0.01) {
+          return res.status(400).json({ 
+            message: `Ödəniş məbləği düzgün deyil. Ödənilməli: ${appointment.price} AZN, Ödənilən: ${totalPayment} AZN` 
+          });
+        }
+        
         updateData.remainingPayment = {
-          amount: remainingAmount,
-          paymentMethod: paymentMethod,
+          cash: payments.cash || 0,
+          card: payments.card || 0,
+          terminal: payments.terminal || 0,
+          paidAt: new Date()
+        };
+        updateData.paymentType = 'mixed';
+        updateData.paymentMethod = 'mixed';
+      }
+      // Tək üsulla ödəniş
+      else {
+        const method = req.body.paymentMethod;
+        if (!method) {
+          return res.status(400).json({ message: 'Ödəniş üsulu göstərilməlidir' });
+        }
+        
+        updateData.paymentMethod = method;
+        updateData.paymentType = method;
+      }
+    }
+
+    // ========== BAHŞİŞ (TIPS) ==========
+    if (tips && typeof tips === 'object') {
+      const totalTips = (tips.cash || 0) + (tips.card || 0) + (tips.terminal || 0);
+      
+      if (totalTips > 0) {
+        updateData.tips = {
+          amount: totalTips,
+          paymentMethods: {
+            cash: tips.cash || 0,
+            card: tips.card || 0,
+            terminal: tips.terminal || 0
+          },
           paidAt: new Date()
         };
       }
-      
-      updateData.paymentType = 'mixed';
-    } 
-    // Tam ödəniş (beh yoxdur)
-    else {
-      updateData.paymentMethod = paymentMethod;
     }
 
+    // Appointment-i yenilə
     const updatedAppointment = await Appointment.findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true }
     ).populate('customer masseur massageType branch giftCard');
 
-    // ✅ WhatsApp linki yarad (müştəri məlumatı varsa)
+    // WhatsApp linki yarad
     let whatsappLink = null;
     if (updatedAppointment.customer && updatedAppointment.customer.phone) {
       whatsappLink = generateWhatsAppLink(
@@ -249,9 +334,8 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
       );
     }
 
-    // ✅ Response-da appointment + whatsapp link
     res.json({
-      ...updatedAppointment.toObject(), // ❗ toObject() əlavə edin
+      ...updatedAppointment.toObject(),
       whatsappLink
     });
 
@@ -280,60 +364,70 @@ router.get('/appointments/:date/:token', auth, receptionistAuth, async (req, res
 });
 
 // PUT - Randevunu yenilə
-// PUT - Randevunu yenilə
-router.put('/appointments/:id/:token', auth, receptionistAuth, async (req, res) => {
+router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Vaxt dəyişdirilirsə, konflikt yoxla
+    // Əvvəlcə mövcud randevunu tapaq
+    const currentAppointment = await Appointment.findById(id);
+    
+    if (!currentAppointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+    
+    // Conflict yoxlaması - yalnız masseur, startTime və ya endTime dəyişirsə
     if (req.body.startTime || req.body.endTime || req.body.masseur) {
-      const currentAppointment = await Appointment.findById(id);
-      
-      if (!currentAppointment) {
-        return res.status(404).json({ message: 'Randevu tapılmadı' });
-      }
-      
       const updatedData = {
         masseur: req.body.masseur || currentAppointment.masseur,
         branch: req.body.branch || currentAppointment.branch,
-        startTime: req.body.startTime || currentAppointment.startTime,
-        endTime: req.body.endTime || currentAppointment.endTime
+        startTime: new Date(req.body.startTime || currentAppointment.startTime),
+        endTime: new Date(req.body.endTime || currentAppointment.endTime)
       };
 
-      // ✅ DÜZƏLİŞ: _id-ni query-nin əsas hissəsində exclude et
+      // Debug üçün
+      console.log('Yoxlanılan randevu ID:', id);
+      console.log('Yeni vaxt:', updatedData.startTime, '-', updatedData.endTime);
+
       const conflictingAppointment = await Appointment.findOne({
-        _id: { $ne: id }, // ❗ Burada düzgün istifadə olunur
+        _id: { $ne: id }, // Bu randevunu xaric et
         masseur: updatedData.masseur,
         branch: updatedData.branch,
-        status: { $ne: 'cancelled' },
+        status: { $nin: ['cancelled', 'completed'] }, // Ləğv və tamamlanmış randevuları xaric et
         $or: [
+          // Yeni randevunun başlanğıcı mövcud randevunun içindədir
           {
-            // Yeni randevu başlayır, köhnə davam edir
-            startTime: {
-              $lt: new Date(updatedData.endTime),
-              $gte: new Date(updatedData.startTime)
-            }
+            $and: [
+              { startTime: { $lte: updatedData.startTime } },
+              { endTime: { $gt: updatedData.startTime } }
+            ]
           },
+          // Yeni randevunun sonu mövcud randevunun içindədir
           {
-            // Yeni randevu davam edir, köhnə başlayır
-            endTime: {
-              $gt: new Date(updatedData.startTime),
-              $lte: new Date(updatedData.endTime)
-            }
+            $and: [
+              { startTime: { $lt: updatedData.endTime } },
+              { endTime: { $gte: updatedData.endTime } }
+            ]
           },
+          // Mövcud randevu yeni randevunun içindədir
           {
-            // Yeni randevu tamamilə köhnənin içindədir
-            startTime: { $lte: new Date(updatedData.startTime) },
-            endTime: { $gte: new Date(updatedData.endTime) }
+            $and: [
+              { startTime: { $gte: updatedData.startTime } },
+              { endTime: { $lte: updatedData.endTime } }
+            ]
           }
         ]
       });
 
       if (conflictingAppointment) {
+        console.log('Conflict tapıldı:', conflictingAppointment._id);
+  console.log('Conflict randevu vaxtı:', conflictingAppointment.startTime, '-', conflictingAppointment.endTime);
+  console.log('Conflict randevu masajist:', conflictingAppointment.masseur);
+  console.log('Conflict randevu status:', conflictingAppointment.status);
         return res.status(400).json({ 
           message: 'Bu vaxt aralığında masajist artıq məşğuldur!',
           conflictingAppointment: {
             _id: conflictingAppointment._id,
+            customer: conflictingAppointment.customer,
             startTime: conflictingAppointment.startTime,
             endTime: conflictingAppointment.endTime
           }
@@ -341,6 +435,7 @@ router.put('/appointments/:id/:token', auth, receptionistAuth, async (req, res) 
       }
     }
 
+    // Update et
     const updatedAppointment = await Appointment.findByIdAndUpdate(
       id,
       req.body,
@@ -362,7 +457,6 @@ router.put('/appointments/:id/:token', auth, receptionistAuth, async (req, res) 
   }
 });
 
-// GET - BEH gəlirləri (advance payments by date)
 router.get('/advance-payments/date/:date/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const date = new Date(req.params.date);
