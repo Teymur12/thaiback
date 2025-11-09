@@ -950,4 +950,307 @@ router.get('/masseurs/:masseurId/weekly-schedule/:token', auth, receptionistAuth
   }
 });
 
+// routes/receptionist.js-ə əlavə ediləcək yeni route-lar
+
+// GET - Müştərinin bütün randevularını gör (ID ilə)
+router.get('/customers/:customerId/appointments/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    
+    // Müştəri mövcuddurmu yoxla
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      return res.status(404).json({ message: 'Müşteri bulunamadı' });
+    }
+    
+    // Müştərinin bütün randevularını tap (ən yenidən köhnəyə)
+    const appointments = await Appointment.find({
+      customer: customerId
+    })
+    .populate('masseur', 'name')
+    .populate('massageType', 'name duration')
+    .populate('branch', 'name')
+    .sort({ startTime: -1 }); // Ən yeni randevular əvvəl
+    
+    // Statistika
+    const stats = {
+      total: appointments.length,
+      completed: appointments.filter(a => a.status === 'completed').length,
+      scheduled: appointments.filter(a => a.status === 'scheduled').length,
+      cancelled: appointments.filter(a => a.status === 'cancelled').length,
+      totalSpent: appointments
+        .filter(a => a.status === 'completed')
+        .reduce((sum, a) => sum + a.price, 0),
+      totalTips: appointments
+        .filter(a => a.status === 'completed')
+        .reduce((sum, a) => sum + (a.tips?.amount || 0), 0)
+    };
+    
+    res.json({
+      customer: {
+        _id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        notes: customer.notes
+      },
+      appointments,
+      stats
+    });
+  } catch (error) {
+    console.error('Customer appointments error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET - Telefon nömrəsi ilə müştəri tap və randevularını gör
+router.get('/customers/phone/:phone/appointments/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { phone } = req.params;
+    
+    // Telefona görə müştəri tap
+    const customer = await Customer.findOne({ phone });
+    
+    if (!customer) {
+      return res.status(404).json({ 
+        message: 'Bu telefon numarasına ait müşteri bulunamadı',
+        phone 
+      });
+    }
+    
+    // Müştərinin bütün randevularını tap
+    const appointments = await Appointment.find({
+      customer: customer._id
+    })
+    .populate('masseur', 'name')
+    .populate('massageType', 'name duration')
+    .populate('branch', 'name')
+    .sort({ startTime: -1 });
+    
+    // Statistika
+    const stats = {
+      total: appointments.length,
+      completed: appointments.filter(a => a.status === 'completed').length,
+      scheduled: appointments.filter(a => a.status === 'scheduled').length,
+      cancelled: appointments.filter(a => a.status === 'cancelled').length,
+      totalSpent: appointments
+        .filter(a => a.status === 'completed')
+        .reduce((sum, a) => sum + a.price, 0),
+      totalTips: appointments
+        .filter(a => a.status === 'completed')
+        .reduce((sum, a) => sum + (a.tips?.amount || 0), 0),
+      favoriteServices: getFavoriteServices(appointments),
+      favoriteMasseurs: getFavoriteMasseurs(appointments),
+      lastVisit: appointments.find(a => a.status === 'completed')?.startTime
+    };
+    
+    res.json({
+      customer: {
+        _id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        notes: customer.notes
+      },
+      appointments,
+      stats
+    });
+  } catch (error) {
+    console.error('Customer phone appointments error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET - Ad ilə müştəri axtar və randevularını gör
+router.get('/customers/name/:name/appointments/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { name } = req.params;
+    
+    // İsmə görə müştəriləri tap (hissəvi uyğunluq)
+    const customers = await Customer.find({ 
+      name: { $regex: name, $options: 'i' } 
+    });
+    
+    if (customers.length === 0) {
+      return res.status(404).json({ 
+        message: 'Bu adda müşteri bulunamadı',
+        searchTerm: name 
+      });
+    }
+    
+    // Hər müştəri üçün randevuları tap
+    const results = await Promise.all(
+      customers.map(async (customer) => {
+        const appointments = await Appointment.find({
+          customer: customer._id
+        })
+        .populate('masseur', 'name')
+        .populate('massageType', 'name duration')
+        .populate('branch', 'name')
+        .sort({ startTime: -1 });
+        
+        const stats = {
+          total: appointments.length,
+          completed: appointments.filter(a => a.status === 'completed').length,
+          scheduled: appointments.filter(a => a.status === 'scheduled').length,
+          cancelled: appointments.filter(a => a.status === 'cancelled').length,
+          totalSpent: appointments
+            .filter(a => a.status === 'completed')
+            .reduce((sum, a) => sum + a.price, 0),
+          lastVisit: appointments.find(a => a.status === 'completed')?.startTime
+        };
+        
+        return {
+          customer: {
+            _id: customer._id,
+            name: customer.name,
+            phone: customer.phone,
+            notes: customer.notes
+          },
+          appointments,
+          stats
+        };
+      })
+    );
+    
+    res.json({
+      searchTerm: name,
+      found: customers.length,
+      results
+    });
+  } catch (error) {
+    console.error('Customer name appointments error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET - Müştərinin son 5 randevusunu gör (tez baxış üçün)
+router.get('/customers/:customerId/recent-appointments/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const limit = parseInt(req.query.limit) || 5;
+    
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      return res.status(404).json({ message: 'Müşteri bulunamadı' });
+    }
+    
+    const recentAppointments = await Appointment.find({
+      customer: customerId
+    })
+    .populate('masseur', 'name')
+    .populate('massageType', 'name duration')
+    .populate('branch', 'name')
+    .sort({ startTime: -1 })
+    .limit(limit);
+    
+    res.json({
+      customer: {
+        _id: customer._id,
+        name: customer.name,
+        phone: customer.phone
+      },
+      recentAppointments
+    });
+  } catch (error) {
+    console.error('Recent appointments error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Kömək funksiyaları
+function getFavoriteServices(appointments) {
+  const services = {};
+  
+  appointments
+    .filter(a => a.status === 'completed')
+    .forEach(a => {
+      const serviceId = a.massageType._id.toString();
+      const serviceName = a.massageType.name;
+      
+      if (!services[serviceId]) {
+        services[serviceId] = { name: serviceName, count: 0 };
+      }
+      services[serviceId].count++;
+    });
+  
+  return Object.values(services)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3); // Top 3
+}
+
+function getFavoriteMasseurs(appointments) {
+  const masseurs = {};
+  
+  appointments
+    .filter(a => a.status === 'completed')
+    .forEach(a => {
+      const masseurId = a.masseur._id.toString();
+      const masseurName = a.masseur.name;
+      
+      if (!masseurs[masseurId]) {
+        masseurs[masseurId] = { name: masseurName, count: 0 };
+      }
+      masseurs[masseurId].count++;
+    });
+  
+  return Object.values(masseurs)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3); // Top 3
+}
+
+// ✅ BONUS: Müştəri məlumatları ilə birlikdə randevu statistikasını gör
+router.get('/customers/:customerId/full-profile/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      return res.status(404).json({ message: 'Müşteri bulunamadı' });
+    }
+    
+    const appointments = await Appointment.find({
+      customer: customerId
+    })
+    .populate('masseur', 'name')
+    .populate('massageType', 'name duration')
+    .populate('branch', 'name')
+    .sort({ startTime: -1 });
+    
+    const completedAppointments = appointments.filter(a => a.status === 'completed');
+    
+    const profile = {
+      customer: {
+        _id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        notes: customer.notes,
+        createdAt: customer.createdAt
+      },
+      statistics: {
+        totalAppointments: appointments.length,
+        completedAppointments: completedAppointments.length,
+        scheduledAppointments: appointments.filter(a => a.status === 'scheduled').length,
+        cancelledAppointments: appointments.filter(a => a.status === 'cancelled').length,
+        totalSpent: completedAppointments.reduce((sum, a) => sum + a.price, 0),
+        totalTips: completedAppointments.reduce((sum, a) => sum + (a.tips?.amount || 0), 0),
+        averageSpending: completedAppointments.length > 0 
+          ? (completedAppointments.reduce((sum, a) => sum + a.price, 0) / completedAppointments.length).toFixed(2)
+          : 0,
+        firstVisit: completedAppointments[completedAppointments.length - 1]?.startTime,
+        lastVisit: completedAppointments[0]?.startTime,
+        favoriteServices: getFavoriteServices(appointments),
+        favoriteMasseurs: getFavoriteMasseurs(appointments)
+      },
+      recentAppointments: appointments.slice(0, 5),
+      allAppointments: appointments
+    };
+    
+    res.json(profile);
+  } catch (error) {
+    console.error('Full profile error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+
+
 module.exports = router;
