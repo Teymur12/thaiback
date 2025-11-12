@@ -43,7 +43,7 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
       return res.status(400).json({ message: 'Bu masaj növü üçün səhv müddət' });
     }
 
-    const originalPrice = validDuration.price + 4;
+    const originalPrice = validDuration.price + 5;
 
     const customer = await Customer.findById(purchasedBy);
     if (!customer) {
