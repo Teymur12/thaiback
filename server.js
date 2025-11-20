@@ -26,7 +26,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://shahinim_db_user:oeNM
 // Create admin after DB connection
 mongoose.connection.once('open', () => {
   console.log('Connected to MongoDB');
-  createDefaultAdmin();
+
 });
 
 // Routes
