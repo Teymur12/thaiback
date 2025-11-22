@@ -772,4 +772,176 @@ router.put('/appointments/:id/:token', auth, adminAuth, async (req, res) => {
   }
 });
 
+// routes/admin.js - əlavə routes
+
+// GET - BEH qəbzıləri (filtrlənə bilər)
+router.get('/receipts/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const { date, branch, status } = req.query;
+    
+    let query = {
+      'advancePayment.receiptImage.url': { $exists: true, $ne: null }
+    };
+
+    // Tarixə görə filter
+    if (date) {
+      const startDate = new Date(date);
+      const endDate = new Date(date);
+      endDate.setDate(endDate.getDate() + 1);
+      
+      query['advancePayment.receiptImage.uploadedAt'] = {
+        $gte: startDate,
+        $lt: endDate
+      };
+    }
+
+    // Filialə görə filter
+    if (branch) {
+      query.branch = branch;
+    }
+
+    // Status-a görə filter
+    if (status) {
+      query.status = status;
+    }
+
+    const appointments = await Appointment.find(query)
+      .populate('customer', 'name phone')
+      .populate('masseur', 'name')
+      .populate('massageType', 'name')
+      .populate('branch', 'name')
+      .sort({ 'advancePayment.receiptImage.uploadedAt': -1 });
+
+    const receipts = appointments.map(apt => ({
+      _id: apt._id,
+      customer: apt.customer,
+      masseur: apt.masseur,
+      massageType: apt.massageType,
+      branch: apt.branch,
+      advancePayment: {
+        amount: apt.advancePayment.amount,
+        paymentMethod: apt.advancePayment.paymentMethod,
+        receiptImage: apt.advancePayment.receiptImage
+      },
+      appointmentStatus: apt.status,
+      startTime: apt.startTime,
+      price: apt.price
+    }));
+
+    res.json(receipts);
+  } catch (error) {
+    console.error('Receipts fetch error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET - Spesifik randevunun qəbzisini gör
+router.get('/receipts/:appointmentId/view/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+
+    const appointment = await Appointment.findById(appointmentId)
+      .populate('customer', 'name phone')
+      .populate('masseur', 'name')
+      .populate('massageType', 'name')
+      .populate('branch', 'name');
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    if (!appointment.advancePayment?.receiptImage?.url) {
+      return res.status(404).json({ message: 'Qəbzi şəkli yoxdur' });
+    }
+
+    res.json({
+      _id: appointment._id,
+      customer: appointment.customer,
+      masseur: appointment.masseur,
+      massageType: appointment.massageType,
+      branch: appointment.branch,
+      advancePayment: appointment.advancePayment,
+      appointmentStatus: appointment.status,
+      startTime: appointment.startTime,
+      endTime: appointment.endTime,
+      duration: appointment.duration,
+      price: appointment.price
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET - Tarixə görə bütün qəbzılərin hesabatı
+router.get('/receipts/report/daily/:date/:token', auth, adminAuth, async (req, res) => {
+  try {
+    const date = new Date(req.params.date);
+    const nextDay = new Date(date);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    const appointments = await Appointment.find({
+      'advancePayment.receiptImage.uploadedAt': { $gte: date, $lt: nextDay }
+    })
+      .populate('customer', 'name phone')
+      .populate('masseur', 'name')
+      .populate('massageType', 'name')
+      .populate('branch', 'name')
+      .sort({ 'advancePayment.receiptImage.uploadedAt': -1 });
+
+    const report = {
+      date: req.params.date,
+      totalReceipts: appointments.length,
+      totalAmount: 0,
+      byBranch: {},
+      byPaymentMethod: {
+        cash: 0,
+        card: 0,
+        terminal: 0
+      },
+      receipts: []
+    };
+
+    appointments.forEach(apt => {
+      const branchId = apt.branch._id.toString();
+      const method = apt.advancePayment.paymentMethod;
+      const amount = apt.advancePayment.amount;
+
+      // Ümumi məbləğ
+      report.totalAmount += amount;
+
+      // Ödəniş üsulu
+      report.byPaymentMethod[method] += amount;
+
+      // Filialə görə
+      if (!report.byBranch[branchId]) {
+        report.byBranch[branchId] = {
+          name: apt.branch.name,
+          count: 0,
+          total: 0
+        };
+      }
+      report.byBranch[branchId].count++;
+      report.byBranch[branchId].total += amount;
+
+      // Qəbzilər siyahısı
+      report.receipts.push({
+        _id: apt._id,
+        customer: apt.customer,
+        masseur: apt.masseur,
+        massageType: apt.massageType,
+        branch: apt.branch,
+        advancePayment: apt.advancePayment,
+        appointmentStatus: apt.status,
+        startTime: apt.startTime,
+        price: apt.price
+      });
+    });
+
+    res.json(report);
+  } catch (error) {
+    console.error('Receipt report error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
