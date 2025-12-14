@@ -14,24 +14,24 @@ const cloudinary = require('cloudinary').v2;
 function generateWhatsAppLink(phone, message) {
   // Bütün qeyri-rəqəm simvolları sil (boşluq, tire, mötərizə, + və s.)
   let cleanPhone = phone.replace(/[^0-9]/g, '');
-  
+
   // Əgər 994 ilə başlamırsa
   if (!cleanPhone.startsWith('994')) {
     // Əgər 0 ilə başlayırsa (məs: 0507892134)
     if (cleanPhone.startsWith('0')) {
       cleanPhone = '994' + cleanPhone.substring(1);
-    } 
+    }
     // Əgər birbaşa operator kodu ilə başlayırsa (məs: 507892134)
     else {
       cleanPhone = '994' + cleanPhone;
     }
   }
-  
+
   // WhatsApp linkini yarat
   const encodedMessage = encodeURIComponent(message);
   return `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
 }
-  
+
 
 // Customers - token param ilə
 router.post('/customers/:token', auth, receptionistAuth, async (req, res) => {
@@ -57,11 +57,11 @@ router.get('/customers/:id/:token', auth, receptionistAuth, async (req, res) => 
   try {
     const { id } = req.params;
     const customer = await Customer.findById(id);
-    
+
     if (!customer) {
       return res.status(404).json({ message: 'Müşteri bulunamadı' });
     }
-    
+
     res.json(customer);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -72,17 +72,17 @@ router.get('/customers/:id/:token', auth, receptionistAuth, async (req, res) => 
 router.put('/customers/:id/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const updatedCustomer = await Customer.findByIdAndUpdate(
       id,
       req.body,
       { new: true, runValidators: true }
     );
-    
+
     if (!updatedCustomer) {
       return res.status(404).json({ message: 'Müşteri bulunamadı' });
     }
-    
+
     res.json(updatedCustomer);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -93,13 +93,13 @@ router.put('/customers/:id/:token', auth, receptionistAuth, async (req, res) => 
 router.delete('/customers/:id/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const deletedCustomer = await Customer.findByIdAndDelete(id);
-    
+
     if (!deletedCustomer) {
       return res.status(404).json({ message: 'Müşteri bulunamadı' });
     }
-    
+
     res.json({
       message: 'Müşteri başarıyla silindi',
       deletedCustomer
@@ -113,13 +113,13 @@ router.delete('/customers/:id/:token', auth, receptionistAuth, async (req, res) 
 router.get('/customers/:token/search/phone/:phone', auth, receptionistAuth, async (req, res) => {
   try {
     const { phone } = req.params;
-    
+
     const customer = await Customer.findOne({ phone });
-    
+
     if (!customer) {
       return res.status(404).json({ message: 'Bu telefon numarasına ait müşteri bulunamadı' });
     }
-    
+
     res.json(customer);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -130,11 +130,11 @@ router.get('/customers/:token/search/phone/:phone', auth, receptionistAuth, asyn
 router.get('/customers/:token/search/name/:name', auth, receptionistAuth, async (req, res) => {
   try {
     const { name } = req.params;
-    
-    const customers = await Customer.find({ 
-      name: { $regex: name, $options: 'i' } 
+
+    const customers = await Customer.find({
+      name: { $regex: name, $options: 'i' }
     });
-    
+
     res.json(customers);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -148,7 +148,7 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
   try {
     // ✅ FormData-dan gələn JSON-u parse et
     let appointmentData;
-    
+
     if (req.body.body) {
       // Frontend FormData ilə 'body' field-ində göndərir
       appointmentData = JSON.parse(req.body.body);
@@ -178,17 +178,17 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
     const appointment = new Appointment(appointmentData);
     await appointment.save();
     console.log('✅ Randevu yaradıldı:', appointment._id);
-    
+
     const populatedAppointment = await Appointment.findById(appointment._id)
       .populate('customer masseur massageType branch');
-    
+
     res.status(201).json({
       ...populatedAppointment.toObject(),
       receiptImageUrl: appointmentData.advancePayment?.receiptImage?.url || null
     });
   } catch (error) {
     console.error('❌ Appointment creation error:', error);
-    res.status(400).json({ 
+    res.status(400).json({
       message: error.message,
       error: error.toString(),
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
@@ -200,7 +200,7 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
 router.put('/appointments/:id/upload-receipt/:token', uploadAdvanceReceipt, auth, receptionistAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const appointment = await Appointment.findById(id);
     if (!appointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
@@ -257,7 +257,7 @@ router.delete('/appointments/:id/receipt/:token', auth, receptionistAuth, async 
     }
 
     const publicId = appointment.advancePayment?.receiptImage?.publicId;
-    
+
     if (!publicId) {
       return res.status(400).json({ message: 'Bu randevuda qəbzi yoxdur' });
     }
@@ -297,7 +297,7 @@ router.get('/appointments/:id/receipt/:token', auth, receptionistAuth, async (re
     }
 
     const receiptUrl = appointment.advancePayment?.receiptImage?.url;
-    
+
     if (!receiptUrl) {
       return res.status(404).json({ message: 'Bu randevuda qəbzi yoxdur' });
     }
@@ -317,15 +317,15 @@ router.get('/appointments/:id/receipt/:token', auth, receptionistAuth, async (re
 // PUT - Randevunu tamamla (Qalan məbləği ödə + Bahşiş)
 router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (req, res) => {
   try {
-    const { 
-      paymentType, 
+    const {
+      paymentType,
       giftCardNumber,
       // ✅ YENİ - Qarışıq ödəniş üçün
       payments, // { cash: 50, card: 30, terminal: 20 }
       // ✅ YENİ - Bahşiş üçün
       tips // { cash: 10, card: 5 }
     } = req.body;
-    
+
     // Customer məlumatını populate et
     const appointment = await Appointment.findById(req.params.id)
       .populate('customer');
@@ -334,24 +334,24 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
       return res.status(404).json({ message: 'Randevu tapılmadı' });
     }
 
-    const updateData = { 
+    const updateData = {
       status: 'completed'
     };
 
     // ========== ƏSAS ÖDƏNİŞ ==========
-    
+
     // 1️⃣ Gift Card ilə ödəniş
     if (paymentType === 'gift_card' && giftCardNumber) {
       const giftCard = await GiftCard.findOne({ cardNumber: giftCardNumber });
-      
+
       if (!giftCard) {
         return res.status(400).json({ message: 'Hədiyyə kartı tapılmadı' });
       }
-      
+
       if (giftCard.isUsed) {
         return res.status(400).json({ message: 'Bu hədiyyə kartı artıq istifadə olunub' });
       }
-      
+
       if (giftCard.expiryDate < new Date()) {
         return res.status(400).json({ message: 'Bu hədiyyə kartının müddəti bitib' });
       }
@@ -364,24 +364,24 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
       updateData.giftCard = giftCard._id;
       updateData.paymentType = 'gift_card';
       updateData.price = 0;
-    } 
-    
+    }
+
     // 2️⃣ BEH verilib, indi qalan ödənilir
     else if (appointment.advancePayment && appointment.advancePayment.amount > 0) {
       const remainingAmount = appointment.price - appointment.advancePayment.amount;
-      
+
       if (remainingAmount > 0) {
         // Qarışıq ödəniş (nağd + kart + terminal)
         if (payments && typeof payments === 'object') {
           const totalPayment = (payments.cash || 0) + (payments.card || 0) + (payments.terminal || 0);
-          
+
           // Yoxla ki, ödəniş məbləği düzgündür
           if (Math.abs(totalPayment - remainingAmount) > 0.01) {
-            return res.status(400).json({ 
-              message: `Ödəniş məbləği düzgün deyil. Ödənilməli: ${remainingAmount} AZN, Ödənilən: ${totalPayment} AZN` 
+            return res.status(400).json({
+              message: `Ödəniş məbləği düzgün deyil. Ödənilməli: ${remainingAmount} AZN, Ödənilən: ${totalPayment} AZN`
             });
           }
-          
+
           updateData.remainingPayment = {
             cash: payments.cash || 0,
             card: payments.card || 0,
@@ -390,14 +390,14 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
           };
           updateData.paymentType = 'mixed';
           updateData.paymentMethod = 'mixed';
-        } 
+        }
         // Tək üsulla ödəniş
         else {
           const method = req.body.paymentMethod;
           if (!method) {
             return res.status(400).json({ message: 'Ödəniş üsulu göstərilməlidir' });
           }
-          
+
           updateData.remainingPayment = {
             [method]: remainingAmount,
             paidAt: new Date()
@@ -406,20 +406,20 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
           updateData.paymentMethod = method;
         }
       }
-    } 
-    
+    }
+
     // 3️⃣ Tam ödəniş (beh yoxdur)
     else {
       // Qarışıq ödəniş
       if (payments && typeof payments === 'object') {
         const totalPayment = (payments.cash || 0) + (payments.card || 0) + (payments.terminal || 0);
-        
+
         if (Math.abs(totalPayment - appointment.price) > 0.01) {
-          return res.status(400).json({ 
-            message: `Ödəniş məbləği düzgün deyil. Ödənilməli: ${appointment.price} AZN, Ödənilən: ${totalPayment} AZN` 
+          return res.status(400).json({
+            message: `Ödəniş məbləği düzgün deyil. Ödənilməli: ${appointment.price} AZN, Ödənilən: ${totalPayment} AZN`
           });
         }
-        
+
         updateData.remainingPayment = {
           cash: payments.cash || 0,
           card: payments.card || 0,
@@ -435,7 +435,7 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
         if (!method) {
           return res.status(400).json({ message: 'Ödəniş üsulu göstərilməlidir' });
         }
-        
+
         updateData.paymentMethod = method;
         updateData.paymentType = method;
       }
@@ -444,7 +444,7 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
     // ========== BAHŞİŞ (TIPS) ==========
     if (tips && typeof tips === 'object') {
       const totalTips = (tips.cash || 0) + (tips.card || 0) + (tips.terminal || 0);
-      
+
       if (totalTips > 0) {
         updateData.tips = {
           amount: totalTips,
@@ -507,14 +507,14 @@ router.get('/appointments/:date/:token', auth, receptionistAuth, async (req, res
 router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Əvvəlcə mövcud randevunu tapaq
     const currentAppointment = await Appointment.findById(id);
-    
+
     if (!currentAppointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
     }
-    
+
     // Conflict yoxlaması - yalnız masseur, startTime və ya endTime dəyişirsə
     if (req.body.startTime || req.body.endTime || req.body.masseur) {
       const updatedData = {
@@ -560,10 +560,10 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
 
       if (conflictingAppointment) {
         console.log('Conflict tapıldı:', conflictingAppointment._id);
-  console.log('Conflict randevu vaxtı:', conflictingAppointment.startTime, '-', conflictingAppointment.endTime);
-  console.log('Conflict randevu masajist:', conflictingAppointment.masseur);
-  console.log('Conflict randevu status:', conflictingAppointment.status);
-        return res.status(400).json({ 
+        console.log('Conflict randevu vaxtı:', conflictingAppointment.startTime, '-', conflictingAppointment.endTime);
+        console.log('Conflict randevu masajist:', conflictingAppointment.masseur);
+        console.log('Conflict randevu status:', conflictingAppointment.status);
+        return res.status(400).json({
           message: 'Bu vaxt aralığında masajist artıq məşğuldur!',
           conflictingAppointment: {
             _id: conflictingAppointment._id,
@@ -581,10 +581,10 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
       req.body,
       { new: true, runValidators: true }
     )
-    .populate('customer', 'name phone')
-    .populate('masseur', 'name')
-    .populate('massageType', 'name')
-    .populate('branch', 'name');
+      .populate('customer', 'name phone')
+      .populate('masseur', 'name')
+      .populate('massageType', 'name')
+      .populate('branch', 'name');
 
     if (!updatedAppointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
@@ -597,6 +597,39 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
   }
 });
 
+// DELETE - Randevunu sil (Yalnız username "leman" olan istifadəçi silə bilər)
+router.delete('/appointments/:id/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Yalnız username "leman" olan istifadəçi randevu silə bilər
+    if (req.user.username !== 'leman') {
+      return res.status(403).json({
+        message: 'Randevu silmə icazəniz yoxdur. Yalnız müəyyən istifadəçilər randevu silə bilər.'
+      });
+    }
+
+    // Randevunu tap
+    const appointment = await Appointment.findById(id);
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    // Randevunu sil
+    await Appointment.findByIdAndDelete(id);
+
+    res.json({
+      message: 'Randevu uğurla silindi',
+      deletedAppointment: appointment
+    });
+  } catch (error) {
+    console.error('Randevu silmə xətası:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+
 router.get('/advance-payments/date/:date/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const date = new Date(req.params.date);
@@ -608,9 +641,9 @@ router.get('/advance-payments/date/:date/:token', auth, receptionistAuth, async 
       'advancePayment.paidAt': { $gte: date, $lt: nextDay },
       'advancePayment.amount': { $gt: 0 }
     })
-    .populate('customer', 'name phone')
-    .populate('masseur', 'name')
-    .populate('massageType', 'name');
+      .populate('customer', 'name phone')
+      .populate('masseur', 'name')
+      .populate('massageType', 'name');
 
     res.json(appointments);
   } catch (error) {
@@ -647,7 +680,7 @@ router.post('/expenses/:token', auth, receptionistAuth, async (req, res) => {
       branch: req.user.branch,
       createdBy: req.user.userId
     });
-    
+
     await expense.save();
     res.status(201).json(expense);
   } catch (error) {
@@ -661,7 +694,7 @@ router.get('/expenses/today/:token', auth, receptionistAuth, async (req, res) =>
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -711,23 +744,23 @@ router.get('/expenses/:token', auth, receptionistAuth, async (req, res) => {
 router.put('/expenses/:id/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Yalnız öz filialının xərclərini yeniləyə bilər
     const expense = await Expense.findOne({
       _id: id,
       branch: req.user.branch
     });
-    
+
     if (!expense) {
       return res.status(404).json({ message: 'Xərc tapılmadı və ya icazəniz yoxdur' });
     }
-    
+
     const updatedExpense = await Expense.findByIdAndUpdate(
       id,
       req.body,
       { new: true, runValidators: true }
     ).populate('createdBy', 'name');
-    
+
     res.json(updatedExpense);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -738,19 +771,19 @@ router.put('/expenses/:id/:token', auth, receptionistAuth, async (req, res) => {
 router.delete('/expenses/:id/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Yalnız öz filialının xərclərini silə bilər
     const expense = await Expense.findOne({
       _id: id,
       branch: req.user.branch
     });
-    
+
     if (!expense) {
       return res.status(404).json({ message: 'Xərc tapılmadı və ya icazəniz yoxdur' });
     }
-    
+
     await Expense.findByIdAndDelete(id);
-    
+
     res.json({
       message: 'Xərc uğurla silindi',
       deletedExpense: expense
@@ -767,30 +800,30 @@ router.post('/masseurs/:masseurId/block/:date/:token', auth, receptionistAuth, a
   try {
     const { masseurId, date } = req.params;
     const { reason } = req.body;
-    
+
     const masseur = await Masseur.findOne({
       _id: masseurId,
       branch: req.user.branch
     });
-    
+
     if (!masseur) {
       return res.status(404).json({ message: 'Masajist tapılmadı və ya icazəniz yoxdur' });
     }
-    
+
     // Tarix artıq bloklanıbmı yoxla
     const blockDate = new Date(date);
     blockDate.setHours(0, 0, 0, 0);
-    
+
     const alreadyBlocked = masseur.blockedDates.some(blocked => {
       const bd = new Date(blocked.date);
       bd.setHours(0, 0, 0, 0);
       return bd.getTime() === blockDate.getTime();
     });
-    
+
     if (alreadyBlocked) {
       return res.status(400).json({ message: 'Bu tarix artıq bloklanıb' });
     }
-    
+
     // Həmin tarixdə mövcud randevular varsa xəbərdarlıq ver
     const existingAppointments = await Appointment.find({
       masseur: masseurId,
@@ -801,23 +834,23 @@ router.post('/masseurs/:masseurId/block/:date/:token', auth, receptionistAuth, a
       },
       status: { $ne: 'cancelled' }
     });
-    
+
     if (existingAppointments.length > 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: `Bu tarixdə ${existingAppointments.length} aktiv randevu var! Əvvəlcə onları ləğv edin və ya digər masajistə köçürün.`,
         appointments: existingAppointments
       });
     }
-    
+
     // Tarixi blokla
     masseur.blockedDates.push({
       date: blockDate,
       reason: reason || 'İstirahət günü',
       blockedBy: req.user.userId
     });
-    
+
     await masseur.save();
-    
+
     res.json({
       message: 'Tarix uğurla bloklandı',
       masseur
@@ -832,28 +865,28 @@ router.post('/masseurs/:masseurId/block/:date/:token', auth, receptionistAuth, a
 router.delete('/masseurs/:masseurId/unblock/:date/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { masseurId, date } = req.params;
-    
+
     const masseur = await Masseur.findOne({
       _id: masseurId,
       branch: req.user.branch
     });
-    
+
     if (!masseur) {
       return res.status(404).json({ message: 'Masajist tapılmadı və ya icazəniz yoxdur' });
     }
-    
+
     const blockDate = new Date(date);
     blockDate.setHours(0, 0, 0, 0);
-    
+
     // Bloklanan tarixi tap və sil
     masseur.blockedDates = masseur.blockedDates.filter(blocked => {
       const bd = new Date(blocked.date);
       bd.setHours(0, 0, 0, 0);
       return bd.getTime() !== blockDate.getTime();
     });
-    
+
     await masseur.save();
-    
+
     res.json({
       message: 'Blok uğurla götürüldü',
       masseur
@@ -868,16 +901,16 @@ router.delete('/masseurs/:masseurId/unblock/:date/:token', auth, receptionistAut
 router.get('/masseurs/:masseurId/blocked-dates/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { masseurId } = req.params;
-    
+
     const masseur = await Masseur.findOne({
       _id: masseurId,
       branch: req.user.branch
     }).populate('blockedDates.blockedBy', 'name');
-    
+
     if (!masseur) {
       return res.status(404).json({ message: 'Masajist tapılmadı' });
     }
-    
+
     res.json({
       masseur: {
         _id: masseur._id,
@@ -896,47 +929,47 @@ router.post('/masseurs/:masseurId/block-weekly/:token', auth, receptionistAuth, 
     const { masseurId } = req.params;
     const { weekDays, reason, startDate, endDate } = req.body;
     // weekDays: [0, 1, 2] - 0=Bazar, 1=Bazar ertəsi, 2=Çərşənbə axşamı və s.
-    
+
     const masseur = await Masseur.findOne({
       _id: masseurId,
       branch: req.user.branch
     });
-    
+
     if (!masseur) {
       return res.status(404).json({ message: 'Masajist tapılmadı və ya icazəniz yoxdur' });
     }
-    
+
     if (!weekDays || !Array.isArray(weekDays) || weekDays.length === 0) {
       return res.status(400).json({ message: 'Həftənin günlərini seçin' });
     }
-    
+
     // Başlanğıc və son tarix
     const start = startDate ? new Date(startDate) : new Date();
     const end = endDate ? new Date(endDate) : new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 il
-    
+
     start.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
-    
+
     const blockedDates = [];
     const conflicts = [];
-    
+
     // Başlanğıcdan sona qədər bütün günləri yoxla
     let currentDate = new Date(start);
-    
+
     while (currentDate <= end) {
       const dayOfWeek = currentDate.getDay();
-      
+
       // Əgər seçilmiş günlərdəndirsə
       if (weekDays.includes(dayOfWeek)) {
         const dateToBlock = new Date(currentDate);
-        
+
         // Artıq bloklanıbmı yoxla
         const alreadyBlocked = masseur.blockedDates.some(blocked => {
           const bd = new Date(blocked.date);
           bd.setHours(0, 0, 0, 0);
           return bd.getTime() === dateToBlock.getTime();
         });
-        
+
         if (!alreadyBlocked) {
           // Həmin tarixdə aktiv randevu varsa
           const existingAppointments = await Appointment.find({
@@ -948,7 +981,7 @@ router.post('/masseurs/:masseurId/block-weekly/:token', auth, receptionistAuth, 
             },
             status: { $ne: 'cancelled' }
           }).populate('customer', 'name phone');
-          
+
           if (existingAppointments.length > 0) {
             conflicts.push({
               date: dateToBlock.toISOString().split('T')[0],
@@ -963,24 +996,24 @@ router.post('/masseurs/:masseurId/block-weekly/:token', auth, receptionistAuth, 
           }
         }
       }
-      
+
       // Növbəti günə keç
       currentDate.setDate(currentDate.getDate() + 1);
     }
-    
+
     // Konflikt varsa xəbərdarlıq ver
     if (conflicts.length > 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: `${conflicts.length} tarixdə aktiv randevular var!`,
         conflicts,
         suggestion: 'Əvvəlcə bu randevuları ləğv edin və ya digər masajistə köçürün.'
       });
     }
-    
+
     // Bütün tarixləri blokla
     masseur.blockedDates.push(...blockedDates);
     await masseur.save();
-    
+
     res.json({
       message: `${blockedDates.length} tarix uğurla bloklandı`,
       blockedCount: blockedDates.length,
@@ -997,34 +1030,34 @@ router.delete('/masseurs/:masseurId/unblock-weekly/:token', auth, receptionistAu
   try {
     const { masseurId } = req.params;
     const { weekDays, startDate, endDate } = req.body;
-    
+
     const masseur = await Masseur.findOne({
       _id: masseurId,
       branch: req.user.branch
     });
-    
+
     if (!masseur) {
       return res.status(404).json({ message: 'Masajist tapılmadı və ya icazəniz yoxdur' });
     }
-    
+
     if (!weekDays || !Array.isArray(weekDays) || weekDays.length === 0) {
       return res.status(400).json({ message: 'Həftənin günlərini seçin' });
     }
-    
+
     const start = startDate ? new Date(startDate) : new Date();
     const end = endDate ? new Date(endDate) : new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000);
-    
+
     start.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
-    
+
     let removedCount = 0;
-    
+
     // Filterlə və sil
     masseur.blockedDates = masseur.blockedDates.filter(blocked => {
       const bd = new Date(blocked.date);
       bd.setHours(0, 0, 0, 0);
       const dayOfWeek = bd.getDay();
-      
+
       // Əgər tarix aralığındadırsa və seçilmiş günlərdəndirsə
       if (bd >= start && bd <= end && weekDays.includes(dayOfWeek)) {
         removedCount++;
@@ -1032,9 +1065,9 @@ router.delete('/masseurs/:masseurId/unblock-weekly/:token', auth, receptionistAu
       }
       return true; // Saxla
     });
-    
+
     await masseur.save();
-    
+
     res.json({
       message: `${removedCount} tarix blokdan çıxarıldı`,
       removedCount,
@@ -1050,16 +1083,16 @@ router.delete('/masseurs/:masseurId/unblock-weekly/:token', auth, receptionistAu
 router.get('/masseurs/:masseurId/weekly-schedule/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { masseurId } = req.params;
-    
+
     const masseur = await Masseur.findOne({
       _id: masseurId,
       branch: req.user.branch
     });
-    
+
     if (!masseur) {
       return res.status(404).json({ message: 'Masajist tapılmadı' });
     }
-    
+
     // Həftənin hər günü üçün statistika
     const weeklyStats = {
       0: { name: 'Bazar', blockedCount: 0, dates: [] },
@@ -1070,13 +1103,13 @@ router.get('/masseurs/:masseurId/weekly-schedule/:token', auth, receptionistAuth
       5: { name: 'Cümə', blockedCount: 0, dates: [] },
       6: { name: 'Şənbə', blockedCount: 0, dates: [] }
     };
-    
+
     masseur.blockedDates.forEach(blocked => {
       const dayOfWeek = new Date(blocked.date).getDay();
       weeklyStats[dayOfWeek].blockedCount++;
       weeklyStats[dayOfWeek].dates.push(blocked.date);
     });
-    
+
     res.json({
       masseur: {
         _id: masseur._id,
@@ -1096,22 +1129,22 @@ router.get('/masseurs/:masseurId/weekly-schedule/:token', auth, receptionistAuth
 router.get('/customers/:customerId/appointments/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { customerId } = req.params;
-    
+
     // Müştəri mövcuddurmu yoxla
     const customer = await Customer.findById(customerId);
     if (!customer) {
       return res.status(404).json({ message: 'Müşteri bulunamadı' });
     }
-    
+
     // Müştərinin bütün randevularını tap (ən yenidən köhnəyə)
     const appointments = await Appointment.find({
       customer: customerId
     })
-    .populate('masseur', 'name')
-    .populate('massageType', 'name duration')
-    .populate('branch', 'name')
-    .sort({ startTime: -1 }); // Ən yeni randevular əvvəl
-    
+      .populate('masseur', 'name')
+      .populate('massageType', 'name duration')
+      .populate('branch', 'name')
+      .sort({ startTime: -1 }); // Ən yeni randevular əvvəl
+
     // Statistika
     const stats = {
       total: appointments.length,
@@ -1125,7 +1158,7 @@ router.get('/customers/:customerId/appointments/:token', auth, receptionistAuth,
         .filter(a => a.status === 'completed')
         .reduce((sum, a) => sum + (a.tips?.amount || 0), 0)
     };
-    
+
     res.json({
       customer: {
         _id: customer._id,
@@ -1146,26 +1179,26 @@ router.get('/customers/:customerId/appointments/:token', auth, receptionistAuth,
 router.get('/customers/phone/:phone/appointments/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { phone } = req.params;
-    
+
     // Telefona görə müştəri tap
     const customer = await Customer.findOne({ phone });
-    
+
     if (!customer) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: 'Bu telefon numarasına ait müşteri bulunamadı',
-        phone 
+        phone
       });
     }
-    
+
     // Müştərinin bütün randevularını tap
     const appointments = await Appointment.find({
       customer: customer._id
     })
-    .populate('masseur', 'name')
-    .populate('massageType', 'name duration')
-    .populate('branch', 'name')
-    .sort({ startTime: -1 });
-    
+      .populate('masseur', 'name')
+      .populate('massageType', 'name duration')
+      .populate('branch', 'name')
+      .sort({ startTime: -1 });
+
     // Statistika
     const stats = {
       total: appointments.length,
@@ -1182,7 +1215,7 @@ router.get('/customers/phone/:phone/appointments/:token', auth, receptionistAuth
       favoriteMasseurs: getFavoriteMasseurs(appointments),
       lastVisit: appointments.find(a => a.status === 'completed')?.startTime
     };
-    
+
     res.json({
       customer: {
         _id: customer._id,
@@ -1203,30 +1236,30 @@ router.get('/customers/phone/:phone/appointments/:token', auth, receptionistAuth
 router.get('/customers/name/:name/appointments/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { name } = req.params;
-    
+
     // İsmə görə müştəriləri tap (hissəvi uyğunluq)
-    const customers = await Customer.find({ 
-      name: { $regex: name, $options: 'i' } 
+    const customers = await Customer.find({
+      name: { $regex: name, $options: 'i' }
     });
-    
+
     if (customers.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: 'Bu adda müşteri bulunamadı',
-        searchTerm: name 
+        searchTerm: name
       });
     }
-    
+
     // Hər müştəri üçün randevuları tap
     const results = await Promise.all(
       customers.map(async (customer) => {
         const appointments = await Appointment.find({
           customer: customer._id
         })
-        .populate('masseur', 'name')
-        .populate('massageType', 'name duration')
-        .populate('branch', 'name')
-        .sort({ startTime: -1 });
-        
+          .populate('masseur', 'name')
+          .populate('massageType', 'name duration')
+          .populate('branch', 'name')
+          .sort({ startTime: -1 });
+
         const stats = {
           total: appointments.length,
           completed: appointments.filter(a => a.status === 'completed').length,
@@ -1237,7 +1270,7 @@ router.get('/customers/name/:name/appointments/:token', auth, receptionistAuth, 
             .reduce((sum, a) => sum + a.price, 0),
           lastVisit: appointments.find(a => a.status === 'completed')?.startTime
         };
-        
+
         return {
           customer: {
             _id: customer._id,
@@ -1250,7 +1283,7 @@ router.get('/customers/name/:name/appointments/:token', auth, receptionistAuth, 
         };
       })
     );
-    
+
     res.json({
       searchTerm: name,
       found: customers.length,
@@ -1267,21 +1300,21 @@ router.get('/customers/:customerId/recent-appointments/:token', auth, receptioni
   try {
     const { customerId } = req.params;
     const limit = parseInt(req.query.limit) || 5;
-    
+
     const customer = await Customer.findById(customerId);
     if (!customer) {
       return res.status(404).json({ message: 'Müşteri bulunamadı' });
     }
-    
+
     const recentAppointments = await Appointment.find({
       customer: customerId
     })
-    .populate('masseur', 'name')
-    .populate('massageType', 'name duration')
-    .populate('branch', 'name')
-    .sort({ startTime: -1 })
-    .limit(limit);
-    
+      .populate('masseur', 'name')
+      .populate('massageType', 'name duration')
+      .populate('branch', 'name')
+      .sort({ startTime: -1 })
+      .limit(limit);
+
     res.json({
       customer: {
         _id: customer._id,
@@ -1299,19 +1332,19 @@ router.get('/customers/:customerId/recent-appointments/:token', auth, receptioni
 // Kömək funksiyaları
 function getFavoriteServices(appointments) {
   const services = {};
-  
+
   appointments
     .filter(a => a.status === 'completed')
     .forEach(a => {
       const serviceId = a.massageType._id.toString();
       const serviceName = a.massageType.name;
-      
+
       if (!services[serviceId]) {
         services[serviceId] = { name: serviceName, count: 0 };
       }
       services[serviceId].count++;
     });
-  
+
   return Object.values(services)
     .sort((a, b) => b.count - a.count)
     .slice(0, 3); // Top 3
@@ -1319,19 +1352,19 @@ function getFavoriteServices(appointments) {
 
 function getFavoriteMasseurs(appointments) {
   const masseurs = {};
-  
+
   appointments
     .filter(a => a.status === 'completed')
     .forEach(a => {
       const masseurId = a.masseur._id.toString();
       const masseurName = a.masseur.name;
-      
+
       if (!masseurs[masseurId]) {
         masseurs[masseurId] = { name: masseurName, count: 0 };
       }
       masseurs[masseurId].count++;
     });
-  
+
   return Object.values(masseurs)
     .sort((a, b) => b.count - a.count)
     .slice(0, 3); // Top 3
@@ -1341,22 +1374,22 @@ function getFavoriteMasseurs(appointments) {
 router.get('/customers/:customerId/full-profile/:token', auth, receptionistAuth, async (req, res) => {
   try {
     const { customerId } = req.params;
-    
+
     const customer = await Customer.findById(customerId);
     if (!customer) {
       return res.status(404).json({ message: 'Müşteri bulunamadı' });
     }
-    
+
     const appointments = await Appointment.find({
       customer: customerId
     })
-    .populate('masseur', 'name')
-    .populate('massageType', 'name duration')
-    .populate('branch', 'name')
-    .sort({ startTime: -1 });
-    
+      .populate('masseur', 'name')
+      .populate('massageType', 'name duration')
+      .populate('branch', 'name')
+      .sort({ startTime: -1 });
+
     const completedAppointments = appointments.filter(a => a.status === 'completed');
-    
+
     const profile = {
       customer: {
         _id: customer._id,
@@ -1372,7 +1405,7 @@ router.get('/customers/:customerId/full-profile/:token', auth, receptionistAuth,
         cancelledAppointments: appointments.filter(a => a.status === 'cancelled').length,
         totalSpent: completedAppointments.reduce((sum, a) => sum + a.price, 0),
         totalTips: completedAppointments.reduce((sum, a) => sum + (a.tips?.amount || 0), 0),
-        averageSpending: completedAppointments.length > 0 
+        averageSpending: completedAppointments.length > 0
           ? (completedAppointments.reduce((sum, a) => sum + a.price, 0) / completedAppointments.length).toFixed(2)
           : 0,
         firstVisit: completedAppointments[completedAppointments.length - 1]?.startTime,
@@ -1383,7 +1416,7 @@ router.get('/customers/:customerId/full-profile/:token', auth, receptionistAuth,
       recentAppointments: appointments.slice(0, 5),
       allAppointments: appointments
     };
-    
+
     res.json(profile);
   } catch (error) {
     console.error('Full profile error:', error);
