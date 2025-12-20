@@ -603,7 +603,7 @@ router.delete('/appointments/:id/:token', auth, receptionistAuth, async (req, re
     const { id } = req.params;
 
     // Yalnız username "leman" olan istifadəçi randevu silə bilər
-    if (req.user.username !== 'leman') {
+    if (req.user.username !== 'leman1') {
       return res.status(403).json({
         message: 'Randevu silmə icazəniz yoxdur. Yalnız müəyyən istifadəçilər randevu silə bilər.'
       });
