@@ -34,6 +34,7 @@ app.use('/api/admin', require('./routes/admin.js'));
 app.use('/api/appointments', require('./routes/appointments.js'));
 app.use('/api/receptionist', require('./routes/receptionist.js'));
 app.use('/api/gift-cards', require('./routes/giftCards'));
+app.use('/api/packages', require('./routes/packages'));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

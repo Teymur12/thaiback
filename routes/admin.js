@@ -14,7 +14,7 @@ const router = express.Router();
 // WhatsApp link generator - ❗ ƏLAVƏ EDİLDİ
 function generateWhatsAppLink(phone, message) {
   let cleanPhone = phone.replace(/[^0-9]/g, '');
-  
+
   if (!cleanPhone.startsWith('994')) {
     if (cleanPhone.startsWith('0')) {
       cleanPhone = '994' + cleanPhone.substring(1);
@@ -22,7 +22,7 @@ function generateWhatsAppLink(phone, message) {
       cleanPhone = '994' + cleanPhone;
     }
   }
-  
+
   const encodedMessage = encodeURIComponent(message);
   return `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
 }
@@ -55,11 +55,11 @@ router.get('/customers/:token/search/phone/:phone', auth, adminAuth, async (req,
   try {
     const { phone } = req.params;
     const customer = await Customer.findOne({ phone });
-    
+
     if (!customer) {
       return res.status(404).json({ message: 'Bu telefon numarasına ait müşteri bulunamadı' });
     }
-    
+
     res.json(customer);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -75,11 +75,11 @@ router.put('/customers/:id/:token', auth, adminAuth, async (req, res) => {
       req.body,
       { new: true, runValidators: true }
     );
-    
+
     if (!updatedCustomer) {
       return res.status(404).json({ message: 'Müşteri bulunamadı' });
     }
-    
+
     res.json(updatedCustomer);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -91,11 +91,11 @@ router.delete('/customers/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const deletedCustomer = await Customer.findByIdAndDelete(id);
-    
+
     if (!deletedCustomer) {
       return res.status(404).json({ message: 'Müşteri bulunamadı' });
     }
-    
+
     res.json({
       message: 'Müşteri başarıyla silindi',
       deletedCustomer
@@ -109,7 +109,7 @@ router.delete('/customers/:id/:token', auth, adminAuth, async (req, res) => {
 router.post('/branches/:token', auth, adminAuth, async (req, res) => {
   try {
     console.log(req.body);
-    
+
     const branch = new Branch(req.body);
     await branch.save();
     res.status(201).json(branch);
@@ -168,16 +168,16 @@ router.get('/masseurs/:token', auth, adminAuth, async (req, res) => {
 router.delete('/masseurs/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const deletedMasseur = await Masseur.findByIdAndDelete(id);
-    
+
     if (!deletedMasseur) {
       return res.status(404).json({ message: 'Masaj terapisti bulunamadı' });
     }
-    
-    res.json({ 
+
+    res.json({
       message: 'Masaj terapisti başarıyla silindi',
-      deletedMasseur 
+      deletedMasseur
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -187,17 +187,17 @@ router.delete('/masseurs/:id/:token', auth, adminAuth, async (req, res) => {
 router.put('/masseurs/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const updatedMasseur = await Masseur.findByIdAndUpdate(
-      id, 
-      req.body, 
+      id,
+      req.body,
       { new: true, runValidators: true }
     );
-    
+
     if (!updatedMasseur) {
       return res.status(404).json({ message: 'Masaj terapisti bulunamadı' });
     }
-    
+
     res.json(updatedMasseur);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -227,17 +227,17 @@ router.get('/massage-types/:token', auth, adminAuth, async (req, res) => {
 router.put('/massage-types/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const updatedMassageType = await MassageType.findByIdAndUpdate(
-      id, 
-      req.body, 
+      id,
+      req.body,
       { new: true, runValidators: true }
     );
-    
+
     if (!updatedMassageType) {
       return res.status(404).json({ message: 'Masaj türü bulunamadı' });
     }
-    
+
     res.json(updatedMassageType);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -248,20 +248,20 @@ router.put('/massage-types/:id/:token/durations/:durationId', auth, adminAuth, a
   try {
     const { id, durationId } = req.params;
     const { minutes, price } = req.body;
-    
+
     const massageType = await MassageType.findById(id);
     if (!massageType) {
       return res.status(404).json({ message: 'Masaj türü bulunamadı' });
     }
-    
+
     const duration = massageType.durations.id(durationId);
     if (!duration) {
       return res.status(404).json({ message: 'Duration bulunamadı' });
     }
-    
+
     duration.minutes = minutes || duration.minutes;
     duration.price = price || duration.price;
-    
+
     await massageType.save();
     res.json(massageType);
   } catch (error) {
@@ -272,23 +272,23 @@ router.put('/massage-types/:id/:token/durations/:durationId', auth, adminAuth, a
 router.delete('/massage-types/:id/:token/durations/:durationId', auth, adminAuth, async (req, res) => {
   try {
     const { id, durationId } = req.params;
-    
+
     const massageType = await MassageType.findById(id);
     if (!massageType) {
       return res.status(404).json({ message: 'Masaj türü bulunamadı' });
     }
-    
+
     const duration = massageType.durations.id(durationId);
     if (!duration) {
       return res.status(404).json({ message: 'Duration bulunamadı' });
     }
-    
+
     duration.remove();
     await massageType.save();
-    
-    res.json({ 
+
+    res.json({
       message: 'Duration başarıyla silindi',
-      massageType 
+      massageType
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -298,16 +298,16 @@ router.delete('/massage-types/:id/:token/durations/:durationId', auth, adminAuth
 router.delete('/massage-types/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const deletedMassageType = await MassageType.findByIdAndDelete(id);
-    
+
     if (!deletedMassageType) {
       return res.status(404).json({ message: 'Masaj türü bulunamadı' });
     }
-    
-    res.json({ 
+
+    res.json({
       message: 'Masaj türü başarıyla silindi',
-      deletedMassageType 
+      deletedMassageType
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -332,40 +332,40 @@ router.put('/receptionists/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
-    
+
     updateData.role = 'receptionist';
-    
+
     if (updateData.password && updateData.password.trim() !== '') {
       const user = await User.findById(id);
       if (!user || user.role !== 'receptionist') {
         return res.status(404).json({ message: 'Resepsiyon personeli bulunamadı' });
       }
-      
+
       Object.assign(user, updateData);
       await user.save();
-      
+
       const userResponse = user.toObject();
       delete userResponse.password;
-      
+
       res.json(userResponse);
     } else {
       if (updateData.password === '') {
         delete updateData.password;
       }
-      
+
       const updatedReceptionist = await User.findOneAndUpdate(
         { _id: id, role: 'receptionist' },
         updateData,
         { new: true, runValidators: true }
       ).populate('branch');
-      
+
       if (!updatedReceptionist) {
         return res.status(404).json({ message: 'Resepsiyon personeli bulunamadı' });
       }
-      
+
       const userResponse = updatedReceptionist.toObject();
       delete userResponse.password;
-      
+
       res.json(userResponse);
     }
   } catch (error) {
@@ -376,22 +376,22 @@ router.put('/receptionists/:id/:token', auth, adminAuth, async (req, res) => {
 router.delete('/receptionists/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const deletedReceptionist = await User.findOneAndDelete({ 
-      _id: id, 
-      role: 'receptionist' 
+
+    const deletedReceptionist = await User.findOneAndDelete({
+      _id: id,
+      role: 'receptionist'
     });
-    
+
     if (!deletedReceptionist) {
       return res.status(404).json({ message: 'Resepsiyon personeli bulunamadı' });
     }
-    
+
     const userResponse = deletedReceptionist.toObject();
     delete userResponse.password;
-    
-    res.json({ 
+
+    res.json({
       message: 'Resepsiyon personeli başarıyla silindi',
-      deletedReceptionist: userResponse 
+      deletedReceptionist: userResponse
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -410,15 +410,15 @@ router.get('/receptionists/:token', auth, adminAuth, async (req, res) => {
 router.get('/masseurs/:masseurId/blocked-dates/:token', auth, adminAuth, async (req, res) => {
   try {
     const { masseurId } = req.params;
-    
+
     const masseur = await Masseur.findById(masseurId)
       .populate('blockedDates.blockedBy', 'name role')
       .populate('branch', 'name');
-    
+
     if (!masseur) {
       return res.status(404).json({ message: 'Masajist tapılmadı' });
     }
-    
+
     res.json({
       masseur: {
         _id: masseur._id,
@@ -432,6 +432,7 @@ router.get('/masseurs/:masseurId/blocked-dates/:token', auth, adminAuth, async (
   }
 });
 
+const Package = require('../models/Package'); // ❗ ƏLAVƏ EDİLDİ
 // Daily Reports - token param ilə
 router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
   try {
@@ -457,6 +458,11 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       purchaseDate: { $gte: date, $lt: nextDay }
     }).populate('branch massageType purchasedBy');
 
+    // ❗ YENİ: Paket satışlarını gətir
+    const packageSales = await Package.find({
+      createdAt: { $gte: date, $lt: nextDay }
+    }).populate('branch massageType customer');
+
     const report = {
       date: req.params.date,
       branches: {}
@@ -480,6 +486,14 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
             count: 0
           },
           giftCardSales: {
+            cash: 0,
+            card: 0,
+            terminal: 0,
+            total: 0,
+            count: 0
+          },
+          // ❗ YENİ: Package Sales strukturu
+          packageSales: {
             cash: 0,
             card: 0,
             terminal: 0,
@@ -523,7 +537,7 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
         report.branches[branchId].revenue[remMethod] += remAmount;
         report.branches[branchId].revenue.total += remAmount;
         report.branches[branchId].appointments++;
-      } 
+      }
       else if (!appointment.advancePayment?.amount || appointment.advancePayment.amount === 0) {
         const paymentMethod = appointment.paymentMethod;
         const price = appointment.price;
@@ -547,6 +561,17 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
       report.branches[branchId].giftCardSales.count++;
     });
 
+    // ❗ YENİ: Paket satışlarını hesabla
+    packageSales.forEach(pkg => {
+      const branchId = pkg.branch._id.toString();
+      initBranch(branchId, pkg.branch.name);
+
+      const paymentMethod = pkg.paymentMethod || 'cash';
+      report.branches[branchId].packageSales[paymentMethod] += pkg.price;
+      report.branches[branchId].packageSales.total += pkg.price;
+      report.branches[branchId].packageSales.count++;
+    });
+
     expenses.forEach(expense => {
       const branchId = expense.branch._id.toString();
       if (report.branches[branchId]) {
@@ -561,11 +586,12 @@ router.get('/reports/daily/:date/:token', auth, adminAuth, async (req, res) => {
 
     Object.keys(report.branches).forEach(branchId => {
       const branch = report.branches[branchId];
-      
-      branch.totalRevenue = branch.revenue.total + 
-                            branch.advancePayments.total + 
-                            branch.giftCardSales.total;
-      
+
+      branch.totalRevenue = branch.revenue.total +
+        branch.advancePayments.total +
+        branch.giftCardSales.total +
+        branch.packageSales.total; // ❗ Əlavə edildi
+
       branch.netRevenue = branch.totalRevenue - branch.expenses.total;
     });
 
@@ -595,10 +621,10 @@ router.post('/appointments/:token', auth, adminAuth, async (req, res) => {
 
     const appointment = new Appointment(appointmentData);
     await appointment.save();
-    
+
     const populatedAppointment = await Appointment.findById(appointment._id)
       .populate('customer masseur massageType branch');
-    
+
     res.status(201).json(populatedAppointment);
   } catch (error) {
     console.error('Appointment creation error:', error);
@@ -609,7 +635,7 @@ router.post('/appointments/:token', auth, adminAuth, async (req, res) => {
 router.put('/appointments/:id/complete/:token', auth, adminAuth, async (req, res) => {
   try {
     const { paymentMethod, paymentType, giftCardNumber } = req.body;
-    
+
     const appointment = await Appointment.findById(req.params.id)
       .populate('customer');
 
@@ -617,22 +643,22 @@ router.put('/appointments/:id/complete/:token', auth, adminAuth, async (req, res
       return res.status(404).json({ message: 'Randevu tapılmadı' });
     }
 
-    const updateData = { 
+    const updateData = {
       status: 'completed',
       paymentType: paymentType || 'cash'
     };
 
     if (paymentType === 'gift_card' && giftCardNumber) {
       const giftCard = await GiftCard.findOne({ cardNumber: giftCardNumber });
-      
+
       if (!giftCard) {
         return res.status(400).json({ message: 'Hədiyyə kartı tapılmadı' });
       }
-      
+
       if (giftCard.isUsed) {
         return res.status(400).json({ message: 'Bu hədiyyə kartı artıq istifadə olunub' });
       }
-      
+
       if (giftCard.expiryDate < new Date()) {
         return res.status(400).json({ message: 'Bu hədiyyə kartının müddəti bitib' });
       }
@@ -644,10 +670,10 @@ router.put('/appointments/:id/complete/:token', auth, adminAuth, async (req, res
 
       updateData.giftCard = giftCard._id;
       updateData.price = 0;
-    } 
+    }
     else if (appointment.advancePayment && appointment.advancePayment.amount > 0) {
       const remainingAmount = appointment.price - appointment.advancePayment.amount;
-      
+
       if (remainingAmount > 0) {
         updateData.remainingPayment = {
           amount: remainingAmount,
@@ -655,9 +681,9 @@ router.put('/appointments/:id/complete/:token', auth, adminAuth, async (req, res
           paidAt: new Date()
         };
       }
-      
+
       updateData.paymentType = 'mixed';
-    } 
+    }
     else {
       updateData.paymentMethod = paymentMethod;
     }
@@ -708,10 +734,10 @@ router.get('/appointments/:date/:token', auth, adminAuth, async (req, res) => {
 router.put('/appointments/:id/:token', auth, adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     if (req.body.startTime || req.body.endTime || req.body.masseur) {
       const currentAppointment = await Appointment.findById(id);
-      
+
       const updatedData = {
         masseur: req.body.masseur || currentAppointment.masseur,
         branch: req.body.branch || currentAppointment.branch,
@@ -745,8 +771,8 @@ router.put('/appointments/:id/:token', auth, adminAuth, async (req, res) => {
       });
 
       if (conflictingAppointment) {
-        return res.status(400).json({ 
-          message: 'Bu vaxt aralığında masajist artıq məşğuldur!' 
+        return res.status(400).json({
+          message: 'Bu vaxt aralığında masajist artıq məşğuldur!'
         });
       }
     }
@@ -756,10 +782,10 @@ router.put('/appointments/:id/:token', auth, adminAuth, async (req, res) => {
       req.body,
       { new: true, runValidators: true }
     )
-    .populate('customer', 'name phone')
-    .populate('masseur', 'name')
-    .populate('massageType', 'name')
-    .populate('branch', 'name');
+      .populate('customer', 'name phone')
+      .populate('masseur', 'name')
+      .populate('massageType', 'name')
+      .populate('branch', 'name');
 
     if (!updatedAppointment) {
       return res.status(404).json({ message: 'Randevu tapılmadı' });
@@ -778,7 +804,7 @@ router.put('/appointments/:id/:token', auth, adminAuth, async (req, res) => {
 router.get('/receipts/:token', auth, adminAuth, async (req, res) => {
   try {
     const { date, branch, status } = req.query;
-    
+
     let query = {
       'advancePayment.receiptImage.url': { $exists: true, $ne: null }
     };
@@ -788,7 +814,7 @@ router.get('/receipts/:token', auth, adminAuth, async (req, res) => {
       const startDate = new Date(date);
       const endDate = new Date(date);
       endDate.setDate(endDate.getDate() + 1);
-      
+
       query['advancePayment.receiptImage.uploadedAt'] = {
         $gte: startDate,
         $lt: endDate
