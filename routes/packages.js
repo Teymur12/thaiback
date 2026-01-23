@@ -63,12 +63,15 @@ router.get('/customer/:customerId/:token', auth, async (req, res) => {
     try {
         const { customerId } = req.params;
 
-        // Find active packages with remaining visits > 0
-        const packages = await Package.find({
+        const query = {
             customer: customerId,
             isActive: true,
-            remainingVisits: { $gt: 0 }
-        })
+            remainingVisits: { $gt: 0 },
+            branch: req.user.branch
+        };
+
+        // Find active packages with remaining visits > 0
+        const packages = await Package.find(query)
             .populate('massageType')
             .sort({ createdAt: -1 });
 
@@ -132,7 +135,11 @@ router.get('/all/:token', auth, async (req, res) => {
     try {
         const { branch } = req.query;
         let query = {};
-        if (branch) {
+
+        // If not admin, or no branch query param, filter by user's branch
+        if (req.user.role !== 'admin' || !branch) {
+            query.branch = req.user.branch;
+        } else {
             query.branch = branch;
         }
 
@@ -140,6 +147,7 @@ router.get('/all/:token', auth, async (req, res) => {
             .populate('customer')
             .populate('massageType')
             .populate('createdBy')
+            .populate('branch', 'name')
             .sort({ createdAt: -1 });
 
         res.json(packages);
@@ -158,12 +166,15 @@ router.get('/date/:date/:token', auth, async (req, res) => {
         const endOfDay = new Date(date);
         endOfDay.setHours(23, 59, 59, 999);
 
-        const packages = await Package.find({
+        const query = {
+            branch: req.user.branch,
             createdAt: {
                 $gte: startOfDay,
                 $lte: endOfDay
             }
-        })
+        };
+
+        const packages = await Package.find(query)
             .populate('customer')
             .populate('massageType')
             .populate('createdBy')
