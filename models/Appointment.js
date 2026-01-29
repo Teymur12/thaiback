@@ -156,6 +156,29 @@ const appointmentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+
+  // ✅ YENİ - MÜŞTƏRİ RƏYİ VƏ MƏMNUNIYYƏT REYTİNQİ
+  customerFeedback: {
+    response: {
+      type: String,
+      default: null
+    },
+    satisfactionRating: {
+      type: Number,
+      min: 1,
+      max: 5,
+      default: null
+    },
+    submittedAt: {
+      type: Date,
+      default: null
+    },
+    submittedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    }
   }
 }, {
   timestamps: true

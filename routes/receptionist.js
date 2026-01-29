@@ -515,7 +515,9 @@ router.put('/appointments/:id/complete/:token', auth, receptionistAuth, async (r
     if (updatedAppointment.customer && updatedAppointment.customer.phone) {
       whatsappLink = generateWhatsAppLink(
         updatedAppointment.customer.phone,
-        `Salam! Xidmətimizdən razı qaldınızmı? 😊 Sizə göstərilən xidməti 1-5 arası bir rəqəmlə qiymətləndirməyinizi xahiş edirik.`
+        `Salam! Xidmətimizdən razı qaldınızmı? 😊 Sizə göstərilən xidməti 1-5 arası bir rəqəmlə qiymətləndirməyinizi xahiş edirik.
+        Здравствуйте! Остались ли вы довольны нашим сервисом? 😊 Просим вас оценить оказанную вам услугу по шкале от 1 до 5.
+        Hello! Were you satisfied with our service? 😊 We kindly ask you to rate the service you received on a scale from 1 to 5.`
       );
     }
 
@@ -798,6 +800,110 @@ router.get('/massage-types/:token', auth, receptionistAuth, async (req, res) => 
     res.status(500).json({ message: error.message });
   }
 });
+
+// ✅ YENİ - Müştəri rəyi əlavə et / yenilə
+router.put('/appointments/:id/feedback/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { response, satisfactionRating } = req.body;
+
+    // Reytinq validation (əgər göndərilibsə)
+    if (satisfactionRating !== null && satisfactionRating !== undefined) {
+      if (satisfactionRating < 1 || satisfactionRating > 5) {
+        return res.status(400).json({
+          message: 'Məmnuniyyət reytinqi 1-5 arası olmalıdır'
+        });
+      }
+    }
+
+    const appointment = await Appointment.findById(id);
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Randevu tapılmadı' });
+    }
+
+    // Yalnız tamamlanmış randevulara rəy əlavə edilə bilər
+    if (appointment.status !== 'completed') {
+      return res.status(400).json({
+        message: 'Yalnız tamamlanmış randevulara rəy əlavə edilə bilər'
+      });
+    }
+
+    // Rəy məlumatlarını yenilə
+    appointment.customerFeedback = {
+      response: response || null,
+      satisfactionRating: satisfactionRating || null,
+      submittedAt: new Date(),
+      submittedBy: req.user.userId
+    };
+
+    await appointment.save();
+
+    const updatedAppointment = await Appointment.findById(id)
+      .populate('customer masseur massageType branch');
+
+    res.json({
+      message: 'Müştəri rəyi uğurla əlavə edildi',
+      appointment: updatedAppointment
+    });
+
+  } catch (error) {
+    console.error('Feedback submission error:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// ✅ YENİ - Masajistlərin reytinqlərini gətir
+router.get('/masseurs/ratings/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    // Filialın bütün masajistlərini gətir
+    const masseurs = await Masseur.find({
+      branch: req.user.branch,
+      isActive: true
+    });
+
+    // Hər masajist üçün reytinq hesabla
+    const ratingsData = await Promise.all(
+      masseurs.map(async (masseur) => {
+        // Masajistin tamamlanmış və reytinqi olan randevularını tap
+        const appointments = await Appointment.find({
+          masseur: masseur._id,
+          status: 'completed',
+          'customerFeedback.satisfactionRating': { $ne: null }
+        });
+
+        // Ortalama reytinq hesabla
+        let averageRating = 0;
+        const totalFeedbacks = appointments.length;
+
+        if (totalFeedbacks > 0) {
+          const totalRating = appointments.reduce((sum, apt) => {
+            return sum + (apt.customerFeedback.satisfactionRating || 0);
+          }, 0);
+          averageRating = (totalRating / totalFeedbacks).toFixed(1);
+        }
+
+        return {
+          masseurId: masseur._id,
+          masseurName: masseur.name,
+          averageRating: parseFloat(averageRating),
+          totalFeedbacks: totalFeedbacks,
+          branch: masseur.branch
+        };
+      })
+    );
+
+    // Reytinqə görə sırala (ən yüksək əvvəl)
+    ratingsData.sort((a, b) => b.averageRating - a.averageRating);
+
+    res.json(ratingsData);
+
+  } catch (error) {
+    console.error('Fetch masseur ratings error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 
 // EXPENSE ROUTES - Xərc əməliyyatları
 
