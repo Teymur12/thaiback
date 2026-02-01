@@ -181,8 +181,8 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
         const discountAmount = (originalPrice * discountPercent) / 100;
         let finalPrice = originalPrice - discountAmount;
 
-        // Yuvarlaqlaşdırma məntiqi - 20% üçün yuxarı yuvarlaqlaşdırma
-        finalPrice = Math.ceil(finalPrice);
+        // Yuvarlaqlaşdırma məntiqi - 20% üçün riyazi yuvarlaqlaşdırma (məs: 49 -> 39)
+        finalPrice = Math.round(finalPrice);
 
         // Appointment data-nı yenilə
         appointmentData.price = finalPrice;
@@ -657,8 +657,8 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
           const discountAmount = (originalPrice * discountPercent) / 100;
           let finalPrice = originalPrice - discountAmount;
 
-          // Yuvarlaqlaşdırma - 20% üçün yuxarı yuvarlaqlaşdırma
-          finalPrice = Math.ceil(finalPrice);
+          // Yuvarlaqlaşdırma - 20% üçün riyazi yuvarlaqlaşdırma (məs: 49 -> 39)
+          finalPrice = Math.round(finalPrice);
 
           req.body.price = finalPrice;
           req.body.discountApplied = true;
