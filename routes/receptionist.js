@@ -161,35 +161,28 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
     appointmentData.branch = req.user.branch;
     appointmentData.createdBy = req.user.userId;
 
-    // ✅ YENİ: XÜSUSİ FİLİAL İÇİN ENDİRİM MƏNTİQİ
-    const SPECIAL_BRANCH_ID = '68d2693d8b8c7e6256a90bc8';
+    // ✅ YENİ: BÜTÜN FİLİALLAR ÜÇÜN ENDİRİM MƏNTİQİ
+    // Həftə içi 20% endirim, həftə sonu endirim yoxdur
 
-    // Əgər hədiyyə kartı deyilsə və xüsusi filialdırsa
-    if (req.user.branch.toString() === SPECIAL_BRANCH_ID && !appointmentData.giftCard) {
+    // Əgər hədiyyə kartı deyilsə
+    if (!appointmentData.giftCard) {
       const startTime = new Date(appointmentData.startTime);
       const dayOfWeek = startTime.getDay(); // 0 = Bazar, 6 = Şənbə
       let discountPercent = 0;
 
-      // Həftə sonu (Şənbə və Bazar) - 10%
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        discountPercent = 10;
+      // Həftə içi (Bazar ertəsi - Cümə) - 20%
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        discountPercent = 20;
       }
-      // Həftə içi - 25%
-      else {
-        discountPercent = 25;
-      }
+      // Həftə sonu (Şənbə və Bazar) - endirim yoxdur
 
       if (discountPercent > 0) {
         const originalPrice = Number(appointmentData.price);
         const discountAmount = (originalPrice * discountPercent) / 100;
         let finalPrice = originalPrice - discountAmount;
 
-        // Yuvarlaqlaşdırma məntiqi
-        if (discountPercent === 10) {
-          finalPrice = Math.round(finalPrice);
-        } else if (discountPercent === 25) {
-          finalPrice = Math.ceil(finalPrice);
-        }
+        // Yuvarlaqlaşdırma məntiqi - 20% üçün yuxarı yuvarlaqlaşdırma
+        finalPrice = Math.ceil(finalPrice);
 
         // Appointment data-nı yenilə
         appointmentData.price = finalPrice;
@@ -198,7 +191,7 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
           percent: discountPercent,
           amount: Number((originalPrice - finalPrice).toFixed(2)),
           originalPrice: originalPrice,
-          reason: (dayOfWeek === 0 || dayOfWeek === 6) ? 'Həftə sonu endirimi' : 'Həftə içi endirimi'
+          reason: 'Həftə içi endirimi'
         };
 
         console.log(`🎁 Endirim tətbiq edildi: ${discountPercent}% (${appointmentData.discount.reason})`);
@@ -623,85 +616,65 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
     }
 
 
-    // ✅ YENİ: XÜSUSİ FİLİAL İÇİN ENDİRİM MƏNTİQİ (UPDATE)
-    const SPECIAL_BRANCH_ID = '68d2693d8b8c7e6256a90bc8';
+    // ✅ YENİ: BÜTÜN FİLİALLAR ÜÇÜN ENDİRİM MƏNTİQİ (UPDATE)
+    // Həftə içi 20% endirim, həftə sonu endirim yoxdur
 
     // Check if we need to recalculate discount
     // If startTime, price, or massageType changes, we might need to recalculate
-    if (req.user.branch.toString() === SPECIAL_BRANCH_ID) {
-      // Check if gift card is used (either in current appointment or in update payload)
-      const hasGiftCard = req.body.giftCard || currentAppointment.giftCard;
+    // Check if gift card is used (either in current appointment or in update payload)
+    const hasGiftCard = req.body.giftCard || currentAppointment.giftCard;
 
-      if (!hasGiftCard) {
-        // Use new start time if provided, otherwise use existing
-        const startTimeStr = req.body.startTime || currentAppointment.startTime;
-        const startTime = new Date(startTimeStr);
-        const dayOfWeek = startTime.getDay();
+    if (!hasGiftCard) {
+      // Use new start time if provided, otherwise use existing
+      const startTimeStr = req.body.startTime || currentAppointment.startTime;
+      const startTime = new Date(startTimeStr);
+      const dayOfWeek = startTime.getDay();
 
-        // Determine discount based on day
-        let discountPercent = 0;
-        if (dayOfWeek === 0 || dayOfWeek === 6) {
-          discountPercent = 10;
-        } else {
-          discountPercent = 25;
+      // Determine discount based on day
+      let discountPercent = 0;
+      // Həftə içi (Bazar ertəsi - Cümə) - 20%
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        discountPercent = 20;
+      }
+      // Həftə sonu - endirim yoxdur
+
+      // DECISION: If price is being updated OR startTime is being updated, we recalculate.
+      if (req.body.price || req.body.startTime) {
+        let originalPrice = req.body.price ? Number(req.body.price) : currentAppointment.price;
+
+        if (currentAppointment.discountApplied &&
+          currentAppointment.discount &&
+          currentAppointment.discount.originalPrice) {
+
+          // If the incoming price (or current price if not provided) matches the stored discounted price
+          // We assume the user didn't manually change the price to this exact value as a new base.
+          if (Math.abs(originalPrice - currentAppointment.price) < 0.1) {
+            originalPrice = currentAppointment.discount.originalPrice;
+          }
         }
 
-        // Get the "original" price. 
-        // Logic: The frontend might send the 'price' field. 
-        // If frontend sends price, we assume it's the raw price (before discount) OR we need to trust the backend calc.
-        // Let's assume req.body.price is the intended new price (which might be raw).
+        if (discountPercent > 0) {
+          const discountAmount = (originalPrice * discountPercent) / 100;
+          let finalPrice = originalPrice - discountAmount;
 
-        // HOWEVER, to be safe and consistent with CREATE logic, we should apply discount to the price provided in body.
-        // If price is NOT in body, we use currentAppointment.price (which might be already discounted... this is tricky).
+          // Yuvarlaqlaşdırma - 20% üçün yuxarı yuvarlaqlaşdırma
+          finalPrice = Math.ceil(finalPrice);
 
-        // BETTER APPROACH: Frontend sends price. We interpret it as the BASE price if we are going to apply discount.
-        // Or we check if discount was already applied and reverse it? No, that's error prone.
-
-        // DECISION: If price is being updated OR startTime is being updated, we recalculate.
-        if (req.body.price || req.body.startTime) {
-          // Logic: The frontend sends 'price'. If it matches the current discounted price, 
-          // we should assume it's the same base price as before, so we recover originalPrice.
-
-          let originalPrice = req.body.price ? Number(req.body.price) : currentAppointment.price;
-
-          if (currentAppointment.discountApplied &&
-            currentAppointment.discount &&
-            currentAppointment.discount.originalPrice) {
-
-            // If the incoming price (or current price if not provided) matches the stored discounted price
-            // We assume the user didn't manually change the price to this exact value as a new base.
-            if (Math.abs(originalPrice - currentAppointment.price) < 0.1) {
-              originalPrice = currentAppointment.discount.originalPrice;
-            }
+          req.body.price = finalPrice;
+          req.body.discountApplied = true;
+          req.body.discount = {
+            percent: discountPercent,
+            amount: Number((originalPrice - finalPrice).toFixed(2)),
+            originalPrice: originalPrice,
+            reason: 'Həftə içi endirimi'
+          };
+        } else {
+          // If moved to a day with no discount (weekend), ensure we reset to original price if available
+          if (!req.body.price && currentAppointment.discount && currentAppointment.discount.originalPrice) {
+            req.body.price = currentAppointment.discount.originalPrice;
           }
-
-          if (discountPercent > 0) {
-            const discountAmount = (originalPrice * discountPercent) / 100;
-            let finalPrice = originalPrice - discountAmount;
-
-            // Yuvarlaqlaşdırma
-            if (discountPercent === 10) {
-              finalPrice = Math.round(finalPrice);
-            } else if (discountPercent === 25) {
-              finalPrice = Math.ceil(finalPrice);
-            }
-
-            req.body.price = finalPrice;
-            req.body.discountApplied = true;
-            req.body.discount = {
-              percent: discountPercent,
-              amount: Number((originalPrice - finalPrice).toFixed(2)),
-              originalPrice: originalPrice,
-              reason: (dayOfWeek === 0 || dayOfWeek === 6) ? 'Həftə sonu endirimi' : 'Həftə içi endirimi'
-            };
-          } else {
-            // If moved to a day with no discount, ensure we reset to original price if available
-            if (!req.body.price && currentAppointment.discount && currentAppointment.discount.originalPrice) {
-              req.body.price = currentAppointment.discount.originalPrice;
-            }
-            req.body.discountApplied = false;
-            req.body.discount = null;
-          }
+          req.body.discountApplied = false;
+          req.body.discount = null;
         }
       }
     }

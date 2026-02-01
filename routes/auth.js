@@ -12,7 +12,7 @@ router.post('/login', async (req, res) => {
     console.log('Login attempt:', { username });
 
     const user = await User.findOne({ username }).populate('branch');
-    
+
     if (!user) {
       console.log('User not found:', username);
       return res.status(401).json({ message: 'Invalid credentials' });
@@ -26,8 +26,8 @@ router.post('/login', async (req, res) => {
 
     const token = jwt.sign(
       { userId: user._id, role: user.role },
-      process.env.JWT_SECRET || 'secret',
-      { expiresIn: '30d' }
+      process.env.JWT_SECRET || 'secret'
+      // Token müddəti yoxdur - müddətsiz token
     );
 
     console.log('Login successful:', { username, role: user.role });
