@@ -161,41 +161,37 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
     appointmentData.branch = req.user.branch;
     appointmentData.createdBy = req.user.userId;
 
-    // ✅ YENİ: BÜTÜN FİLİALLAR ÜÇÜN ENDİRİM MƏNTİQİ
-    // Həftə içi 20% endirim, həftə sonu endirim yoxdur
+    // ✅ ENDİRİM MƏNTİQİ: Bütün filiallar üçün
+    // 90 dəqiqə və üstü masajlarda həftəiçi 10% endirim
+    // Həftə sonu: endirim yoxdur. Hədiyyə kartı: endirim yoxdur.
 
-    // Əgər hədiyyə kartı deyilsə
     if (!appointmentData.giftCard) {
       const startTime = new Date(appointmentData.startTime);
       const dayOfWeek = startTime.getDay(); // 0 = Bazar, 6 = Şənbə
-      let discountPercent = 0;
+      const durationMinutes = parseInt(appointmentData.duration) || 0;
 
-      // Həftə içi (Bazar ertəsi - Cümə) - 20%
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-        discountPercent = 20;
-      }
-      // Həftə sonu (Şənbə və Bazar) - endirim yoxdur
-
-      if (discountPercent > 0) {
+      // Həftəiçi (Bazar ertəsi - Cümə) VƏ müddət >= 90 dəq
+      if (dayOfWeek >= 1 && dayOfWeek <= 5 && durationMinutes >= 90) {
+        const discountPercent = 10;
         const originalPrice = Number(appointmentData.price);
         const discountAmount = (originalPrice * discountPercent) / 100;
-        let finalPrice = originalPrice - discountAmount;
+        const finalPrice = Math.round(originalPrice - discountAmount);
 
-        // Yuvarlaqlaşdırma məntiqi - 20% üçün riyazi yuvarlaqlaşdırma (məs: 49 -> 39)
-        finalPrice = Math.round(finalPrice);
-
-        // Appointment data-nı yenilə
         appointmentData.price = finalPrice;
         appointmentData.discountApplied = true;
         appointmentData.discount = {
           percent: discountPercent,
           amount: Number((originalPrice - finalPrice).toFixed(2)),
           originalPrice: originalPrice,
-          reason: 'Həftə içi endirimi'
+          reason: 'Həftəiçi endirimi (90 dəq+)'
         };
 
-        console.log(`🎁 Endirim tətbiq edildi: ${discountPercent}% (${appointmentData.discount.reason})`);
+        console.log(`🎁 Endirim tətbiq edildi: ${discountPercent}% - ${durationMinutes} dəq`);
         console.log(`💰 Orijinal: ${originalPrice}, Yekun: ${finalPrice}`);
+      } else {
+        // Endirim şərtləri ödənilmədi — sıfırla
+        appointmentData.discountApplied = false;
+        appointmentData.discount = null;
       }
     }
 
@@ -616,66 +612,46 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
     }
 
 
-    // ✅ YENİ: BÜTÜN FİLİALLAR ÜÇÜN ENDİRİM MƏNTİQİ (UPDATE)
-    // Həftə içi 20% endirim, həftə sonu endirim yoxdur
+    // ✅ ENDİRİM MƏNTİQİ (UPDATE): Bütün filiallar üçün
+    // 90 dəqiqə və üstü masajlarda həftəiçi 10% endirim
 
-    // Check if we need to recalculate discount
-    // If startTime, price, or massageType changes, we might need to recalculate
-    // Check if gift card is used (either in current appointment or in update payload)
     const hasGiftCard = req.body.giftCard || currentAppointment.giftCard;
 
-    if (!hasGiftCard) {
-      // Use new start time if provided, otherwise use existing
+    if (!hasGiftCard && (req.body.price || req.body.startTime || req.body.duration)) {
       const startTimeStr = req.body.startTime || currentAppointment.startTime;
       const startTime = new Date(startTimeStr);
       const dayOfWeek = startTime.getDay();
+      const durationMinutes = parseInt(req.body.duration || currentAppointment.duration) || 0;
 
-      // Determine discount based on day
-      let discountPercent = 0;
-      // Həftə içi (Bazar ertəsi - Cümə) - 20%
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-        discountPercent = 20;
-      }
-      // Həftə sonu - endirim yoxdur
-
-      // DECISION: If price is being updated OR startTime is being updated, we recalculate.
-      if (req.body.price || req.body.startTime) {
+      // Həftəiçi VƏ >= 90 dəq
+      if (dayOfWeek >= 1 && dayOfWeek <= 5 && durationMinutes >= 90) {
+        // Orijinal qiyməti bərpa et (əgər əvvəl endirim varsa)
         let originalPrice = req.body.price ? Number(req.body.price) : currentAppointment.price;
-
         if (currentAppointment.discountApplied &&
-          currentAppointment.discount &&
-          currentAppointment.discount.originalPrice) {
-
-          // If the incoming price (or current price if not provided) matches the stored discounted price
-          // We assume the user didn't manually change the price to this exact value as a new base.
-          if (Math.abs(originalPrice - currentAppointment.price) < 0.1) {
-            originalPrice = currentAppointment.discount.originalPrice;
-          }
+          currentAppointment.discount?.originalPrice &&
+          Math.abs(originalPrice - currentAppointment.price) < 0.1) {
+          originalPrice = currentAppointment.discount.originalPrice;
         }
 
-        if (discountPercent > 0) {
-          const discountAmount = (originalPrice * discountPercent) / 100;
-          let finalPrice = originalPrice - discountAmount;
+        const discountPercent = 10;
+        const discountAmount = (originalPrice * discountPercent) / 100;
+        const finalPrice = Math.round(originalPrice - discountAmount);
 
-          // Yuvarlaqlaşdırma - 20% üçün riyazi yuvarlaqlaşdırma (məs: 49 -> 39)
-          finalPrice = Math.round(finalPrice);
-
-          req.body.price = finalPrice;
-          req.body.discountApplied = true;
-          req.body.discount = {
-            percent: discountPercent,
-            amount: Number((originalPrice - finalPrice).toFixed(2)),
-            originalPrice: originalPrice,
-            reason: 'Həftə içi endirimi'
-          };
-        } else {
-          // If moved to a day with no discount (weekend), ensure we reset to original price if available
-          if (!req.body.price && currentAppointment.discount && currentAppointment.discount.originalPrice) {
-            req.body.price = currentAppointment.discount.originalPrice;
-          }
-          req.body.discountApplied = false;
-          req.body.discount = null;
+        req.body.price = finalPrice;
+        req.body.discountApplied = true;
+        req.body.discount = {
+          percent: discountPercent,
+          amount: Number((originalPrice - finalPrice).toFixed(2)),
+          originalPrice: originalPrice,
+          reason: 'Həftəiçi endirimi (90 dəq+)'
+        };
+      } else {
+        // Şərtlər ödənilmədi — orijinal qiyməti bərpa et, endirimi sıfırla
+        if (!req.body.price && currentAppointment.discount?.originalPrice) {
+          req.body.price = currentAppointment.discount.originalPrice;
         }
+        req.body.discountApplied = false;
+        req.body.discount = null;
       }
     }
 
