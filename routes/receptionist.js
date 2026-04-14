@@ -4,6 +4,7 @@ const Customer = require('../models/Customer');
 const Appointment = require('../models/Appointment');
 const Masseur = require('../models/Masseur');
 const MassageType = require('../models/MassageType');
+const Branch = require('../models/Branch');
 const Expense = require('../models/Expense'); // Bu sətr əlavə edilməli idi!
 const { auth, receptionistAuth } = require('../middleware/auth');
 const router = express.Router();
@@ -141,6 +142,16 @@ router.get('/customers/:token/search/name/:name', auth, receptionistAuth, async 
   }
 });
 
+// GET - Bütün filialları qaytarır (nermin üçün multi-branch)
+router.get('/branches/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const branches = await Branch.find({ isActive: true });
+    res.json(branches);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Appointments - token param ilə
 // routes/receptionist.js - Appointment əməliyyatları
 
@@ -158,7 +169,12 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
     }
 
     // Branch və createdBy əlavə et
-    appointmentData.branch = req.user.branch;
+    // Nermin üçün: frontend-dən gələn branch-ı saxla
+    if (req.user.username === 'nermin' && appointmentData.branch) {
+      // nermin seçdiyi filialı saxla
+    } else {
+      appointmentData.branch = req.user.branch;
+    }
     appointmentData.createdBy = req.user.userId;
 
     // ✅ ENDİRİM MƏNTİQİ: Bütün filiallar üçün
@@ -528,8 +544,14 @@ router.get('/appointments/:date/:token', auth, receptionistAuth, async (req, res
     const nextDay = new Date(date);
     nextDay.setDate(nextDay.getDate() + 1);
 
+    // Nermin üçün: query-dən branch seçimi
+    let branchId = req.user.branch;
+    if (req.user.username === 'nermin' && req.query.branch) {
+      branchId = req.query.branch;
+    }
+
     const appointments = await Appointment.find({
-      branch: req.user.branch,
+      branch: branchId,
       startTime: { $gte: date, $lt: nextDay }
     }).populate('customer masseur massageType');
 
@@ -682,8 +704,8 @@ router.delete('/appointments/:id/:token', auth, receptionistAuth, async (req, re
   try {
     const { id } = req.params;
 
-    // Yalnız username "leman" olan istifadəçi randevu silə bilər
-    if (req.user.username !== 'leman') {
+    // Yalnız username "leman" və ya "nermin" olan istifadəçi randevu silə bilər
+    if (req.user.username !== 'leman' && req.user.username !== 'nermin') {
       return res.status(403).json({
         message: 'Randevu silmə icazəniz yoxdur. Yalnız müəyyən istifadəçilər randevu silə bilər.'
       });
@@ -734,7 +756,13 @@ router.get('/advance-payments/date/:date/:token', auth, receptionistAuth, async 
 // Branch specific data - token param ilə
 router.get('/masseurs/:token', auth, receptionistAuth, async (req, res) => {
   try {
-    const masseurs = await Masseur.find({ branch: req.user.branch, isActive: true });
+    // Nermin üçün: query-dən branch seçimi
+    let branchId = req.user.branch;
+    if (req.user.username === 'nermin' && req.query.branch) {
+      branchId = req.query.branch;
+    }
+
+    const masseurs = await Masseur.find({ branch: branchId, isActive: true });
     res.json(masseurs);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -805,9 +833,15 @@ router.put('/appointments/:id/feedback/:token', auth, receptionistAuth, async (r
 // ✅ YENİ - Masajistlərin reytinqlərini gətir
 router.get('/masseurs/ratings/:token', auth, receptionistAuth, async (req, res) => {
   try {
+    // Nermin üçün: query-dən branch seçimi
+    let branchId = req.user.branch;
+    if (req.user.username === 'nermin' && req.query.branch) {
+      branchId = req.query.branch;
+    }
+
     // Filialın bütün masajistlərini gətir
     const masseurs = await Masseur.find({
-      branch: req.user.branch,
+      branch: branchId,
       isActive: true
     });
 

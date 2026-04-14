@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
+const User = require('./models/User');
+
 const app = express();
 
 // Middleware
@@ -20,12 +22,12 @@ app.use(cors({
 app.use(express.json());
 
 // Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://shahinim_db_user:oeNMRviossC4SmPE@cluster0.p2zqjan.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0');
-
+mongoose.connect(process.env.MONGODB_URI);
 
 // Create admin after DB connection
-mongoose.connection.once('open', () => {
+mongoose.connection.once('open', async () => {
   console.log('Connected to MongoDB');
+
 });
 
 // Routes
