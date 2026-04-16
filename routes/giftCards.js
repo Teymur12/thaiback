@@ -64,7 +64,7 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
           return res.status(400).json({ message: `${massageTypeDoc.name} üçün səhv müddət: ${massage.duration}` });
         }
 
-        // YENİ: Hər masaja +4 deyil, sadəcə orijinal qiymət
+      // YENİ: Hər masaja +5 deyil, sadəcə orijinal qiymət
         const price = validDuration.price;
 
         validatedMassages.push({
@@ -74,9 +74,9 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
         });
       }
 
-      // YENİ: İlk masaja +4 manat əlavə et (bütün kart üçün 1 dəfə)
+      // YENİ: İlk masaja +5 manat əlavə et (bütün kart üçün 1 dəfə)
       if (validatedMassages.length > 0) {
-        validatedMassages[0].price += 4;
+        validatedMassages[0].price += 5;
       }
 
       giftCardData.massages = validatedMassages;
@@ -93,7 +93,7 @@ router.post('/:token', auth, receptionistAuth, async (req, res) => {
         return res.status(400).json({ message: 'Bu masaj növü üçün səhv müddət' });
       }
 
-      const originalPrice = validDuration.price + 4;
+      const originalPrice = validDuration.price + 5;
 
       giftCardData.massageType = massageType;
       giftCardData.duration = duration;
