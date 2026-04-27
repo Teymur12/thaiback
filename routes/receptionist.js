@@ -170,7 +170,7 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
 
     // Branch və createdBy əlavə et
     // Nermin üçün: frontend-dən gələn branch-ı saxla
-    if (req.user.username === 'nermin' && appointmentData.branch) {
+    if (req.user.username === 'nermin1' && appointmentData.branch) {
       // nermin seçdiyi filialı saxla
     } else {
       appointmentData.branch = req.user.branch;
