@@ -546,7 +546,7 @@ router.get('/appointments/:date/:token', auth, receptionistAuth, async (req, res
 
     // Nermin üçün: query-dən branch seçimi
     let branchId = req.user.branch;
-    if (req.user.username === 'nermin' && req.query.branch) {
+    if (req.user.username === 'nermin1' && req.query.branch) {
       branchId = req.query.branch;
     }
 
@@ -705,7 +705,7 @@ router.delete('/appointments/:id/:token', auth, receptionistAuth, async (req, re
     const { id } = req.params;
 
     // Yalnız username "leman" və ya "nermin" olan istifadəçi randevu silə bilər
-    if (req.user.username !== 'leman' && req.user.username !== 'nermin') {
+    if (req.user.username !== 'leman' && req.user.username !== 'nermin1') {
       return res.status(403).json({
         message: 'Randevu silmə icazəniz yoxdur. Yalnız müəyyən istifadəçilər randevu silə bilər.'
       });
@@ -758,7 +758,7 @@ router.get('/masseurs/:token', auth, receptionistAuth, async (req, res) => {
   try {
     // Nermin üçün: query-dən branch seçimi
     let branchId = req.user.branch;
-    if (req.user.username === 'nermin' && req.query.branch) {
+    if (req.user.username === 'nermin1' && req.query.branch) {
       branchId = req.query.branch;
     }
 
@@ -835,7 +835,7 @@ router.get('/masseurs/ratings/:token', auth, receptionistAuth, async (req, res) 
   try {
     // Nermin üçün: query-dən branch seçimi
     let branchId = req.user.branch;
-    if (req.user.username === 'nermin' && req.query.branch) {
+    if (req.user.username === 'nermin1' && req.query.branch) {
       branchId = req.query.branch;
     }
 
