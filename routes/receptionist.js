@@ -249,9 +249,34 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
     console.error('❌ Appointment creation error:', error);
     res.status(400).json({
       message: error.message,
-      error: error.toString(),
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
+  }
+});
+
+// ✅ YENİ - Tarix aralığına görə randevuları gətir (May endirimləri üçün)
+router.get('/appointments/date-range/:startDate/:endDate/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.params;
+    
+    // Nermin üçün: query-dən branch seçimi
+    let branchId = req.user.branch;
+    if (req.user.username === 'nermin1' && req.query.branch) {
+      branchId = req.query.branch;
+    }
+
+    const appointments = await Appointment.find({
+      branch: branchId,
+      startTime: {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate + 'T23:59:59.999Z')
+      }
+    }).populate('customer masseur massageType');
+
+    res.json(appointments);
+  } catch (error) {
+    console.error('Fetch date range appointments error:', error);
+    res.status(500).json({ message: error.message });
   }
 });
 
