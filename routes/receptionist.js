@@ -178,20 +178,29 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
     appointmentData.createdBy = req.user.userId;
 
     // ✅ ENDİRİM MƏNTİQİ: Bütün filiallar üçün
-    // 90 dəqiqə və üstü masajlarda həftəiçi 10% endirim
-    // Həftə sonu: endirim yoxdur. Hədiyyə kartı: endirim yoxdur.
+    // 1) MAY AYI KAMPANİYASI: Bütün masajlara (həftəiçi + həftəsonu) 10% endirim
+    // 2) DİGƏR AYLARDA: Həftəiçi + 90 dəq+ masajlara 10% endirim
+    // Hədiyyə kartı: heç vaxt endirim yoxdur.
 
     if (!appointmentData.giftCard) {
       const startTime = new Date(appointmentData.startTime);
-      const dayOfWeek = startTime.getDay(); // 0 = Bazar, 6 = Şənbə
+      const month = startTime.getMonth(); // 0-indexed: Yanvar=0, May=4
+      const dayOfWeek = startTime.getDay(); // 0=Bazar, 6=Şənbə
       const durationMinutes = parseInt(appointmentData.duration) || 0;
 
-      // Həftəiçi (Bazar ertəsi - Cümə) VƏ müddət >= 90 dəq
-      if (dayOfWeek >= 1 && dayOfWeek <= 5 && durationMinutes >= 90) {
+      const isMay = month === 4; // May ayı
+      const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+      const isLongMassage = durationMinutes >= 90;
+
+      const applyDiscount = isMay || (isWeekday && isLongMassage);
+
+      if (applyDiscount) {
         const discountPercent = 10;
         const originalPrice = Number(appointmentData.price);
         const discountAmount = (originalPrice * discountPercent) / 100;
         const finalPrice = Math.round(originalPrice - discountAmount);
+
+        const reason = isMay ? 'May ayı kampaniyası (10%)' : 'Həftəiçi endirimi (90 dəq+)';
 
         appointmentData.price = finalPrice;
         appointmentData.discountApplied = true;
@@ -199,10 +208,10 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
           percent: discountPercent,
           amount: Number((originalPrice - finalPrice).toFixed(2)),
           originalPrice: originalPrice,
-          reason: 'Həftəiçi endirimi (90 dəq+)'
+          reason
         };
 
-        console.log(`🎁 Endirim tətbiq edildi: ${discountPercent}% - ${durationMinutes} dəq`);
+        console.log(`🎁 Endirim tətbiq edildi: ${discountPercent}% — ${reason}`);
         console.log(`💰 Orijinal: ${originalPrice}, Yekun: ${finalPrice}`);
       } else {
         // Endirim şərtləri ödənilmədi — sıfırla
@@ -635,18 +644,25 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
 
 
     // ✅ ENDİRİM MƏNTİQİ (UPDATE): Bütün filiallar üçün
-    // 90 dəqiqə və üstü masajlarda həftəiçi 10% endirim
+    // 1) MAY AYI KAMPANİYASI: Bütün masajlara (həftəiçi + həftəsonu) 10% endirim
+    // 2) DİGƏR AYLARDA: Həftəiçi + 90 dəq+ masajlara 10% endirim
 
     const hasGiftCard = req.body.giftCard || currentAppointment.giftCard;
 
     if (!hasGiftCard && (req.body.price || req.body.startTime || req.body.duration)) {
       const startTimeStr = req.body.startTime || currentAppointment.startTime;
       const startTime = new Date(startTimeStr);
+      const month = startTime.getMonth(); // 0-indexed: May=4
       const dayOfWeek = startTime.getDay();
       const durationMinutes = parseInt(req.body.duration || currentAppointment.duration) || 0;
 
-      // Həftəiçi VƏ >= 90 dəq
-      if (dayOfWeek >= 1 && dayOfWeek <= 5 && durationMinutes >= 90) {
+      const isMay = month === 4;
+      const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+      const isLongMassage = durationMinutes >= 90;
+
+      const applyDiscount = isMay || (isWeekday && isLongMassage);
+
+      if (applyDiscount) {
         // Orijinal qiyməti bərpa et (əgər əvvəl endirim varsa)
         let originalPrice = req.body.price ? Number(req.body.price) : currentAppointment.price;
         if (currentAppointment.discountApplied &&
@@ -658,6 +674,7 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
         const discountPercent = 10;
         const discountAmount = (originalPrice * discountPercent) / 100;
         const finalPrice = Math.round(originalPrice - discountAmount);
+        const reason = isMay ? 'May ayı kampaniyası (10%)' : 'Həftəiçi endirimi (90 dəq+)';
 
         req.body.price = finalPrice;
         req.body.discountApplied = true;
@@ -665,7 +682,7 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
           percent: discountPercent,
           amount: Number((originalPrice - finalPrice).toFixed(2)),
           originalPrice: originalPrice,
-          reason: 'Həftəiçi endirimi (90 dəq+)'
+          reason
         };
       } else {
         // Şərtlər ödənilmədi — orijinal qiyməti bərpa et, endirimi sıfırla
