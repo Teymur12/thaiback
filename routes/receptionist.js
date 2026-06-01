@@ -178,20 +178,28 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
     appointmentData.createdBy = req.user.userId;
 
     // ✅ ENDİRİM MƏNTİQİ: Bütün filiallar üçün
-    // 90 dəqiqə və üstü masajlarda həftəiçi 10% endirim
-    // Həftə sonu: endirim yoxdur. Hədiyyə kartı: endirim yoxdur.
+    // İYUN AYI + HƏFTƏİÇİ (B.e-Cümə) + SAAT 11:00-17:00 => 15% endirim
+    // Hədiyyə kartı: heç vaxt endirim yoxdur.
 
     if (!appointmentData.giftCard) {
       const startTime = new Date(appointmentData.startTime);
-      const dayOfWeek = startTime.getDay(); // 0 = Bazar, 6 = Şənbə
-      const durationMinutes = parseInt(appointmentData.duration) || 0;
+      const month = startTime.getMonth();      // 0-indexed: İyun=5
+      const dayOfWeek = startTime.getDay();    // 0=Bazar, 1=B.e, ..., 5=Cümə, 6=Şənbə
+      const hour = startTime.getHours();       // 0-23
 
-      // Həftəiçi (Bazar ertəsi - Cümə) VƏ müddət >= 90 dəq
-      if (dayOfWeek >= 1 && dayOfWeek <= 5 && durationMinutes >= 90) {
-        const discountPercent = 10;
+      const isIyun = month === 5;              // İyun ayı
+      const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // B.e - Cümə
+      const isDiscountHour = hour >= 11 && hour < 17;     // 11:00-17:00 arası
+
+      const applyDiscount = isIyun && isWeekday && isDiscountHour;
+
+      if (applyDiscount) {
+        const discountPercent = 15;
         const originalPrice = Number(appointmentData.price);
         const discountAmount = (originalPrice * discountPercent) / 100;
         const finalPrice = Math.round(originalPrice - discountAmount);
+
+        const reason = 'İyun ayı həftəiçi endirimi (15%) - 11:00-17:00';
 
         appointmentData.price = finalPrice;
         appointmentData.discountApplied = true;
@@ -199,10 +207,10 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
           percent: discountPercent,
           amount: Number((originalPrice - finalPrice).toFixed(2)),
           originalPrice: originalPrice,
-          reason: 'Həftəiçi endirimi (90 dəq+)'
+          reason
         };
 
-        console.log(`🎁 Endirim tətbiq edildi: ${discountPercent}% - ${durationMinutes} dəq`);
+        console.log(`🎁 Endirim tətbiq edildi: ${discountPercent}% — ${reason}`);
         console.log(`💰 Orijinal: ${originalPrice}, Yekun: ${finalPrice}`);
       } else {
         // Endirim şərtləri ödənilmədi — sıfırla
@@ -240,9 +248,34 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
     console.error('❌ Appointment creation error:', error);
     res.status(400).json({
       message: error.message,
-      error: error.toString(),
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
+  }
+});
+
+// ✅ YENİ - Tarix aralığına görə randevuları gətir (May endirimləri üçün)
+router.get('/appointments/date-range/:startDate/:endDate/:token', auth, receptionistAuth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.params;
+    
+    // Nermin üçün: query-dən branch seçimi
+    let branchId = req.user.branch;
+    if (req.user.username === 'nermin1' && req.query.branch) {
+      branchId = req.query.branch;
+    }
+
+    const appointments = await Appointment.find({
+      branch: branchId,
+      startTime: {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate + 'T23:59:59.999Z')
+      }
+    }).populate('customer masseur massageType');
+
+    res.json(appointments);
+  } catch (error) {
+    console.error('Fetch date range appointments error:', error);
+    res.status(500).json({ message: error.message });
   }
 });
 
@@ -635,18 +668,24 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
 
 
     // ✅ ENDİRİM MƏNTİQİ (UPDATE): Bütün filiallar üçün
-    // 90 dəqiqə və üstü masajlarda həftəiçi 10% endirim
+    // İYUN AYI + HƏFTƏİÇİ (B.e-Cümə) + SAAT 11:00-17:00 => 15% endirim
 
     const hasGiftCard = req.body.giftCard || currentAppointment.giftCard;
 
     if (!hasGiftCard && (req.body.price || req.body.startTime || req.body.duration)) {
       const startTimeStr = req.body.startTime || currentAppointment.startTime;
       const startTime = new Date(startTimeStr);
-      const dayOfWeek = startTime.getDay();
-      const durationMinutes = parseInt(req.body.duration || currentAppointment.duration) || 0;
+      const month = startTime.getMonth();      // 0-indexed: İyun=5
+      const dayOfWeek = startTime.getDay();    // 0=Bazar, 1=B.e, ..., 5=Cümə
+      const hour = startTime.getHours();       // 0-23
 
-      // Həftəiçi VƏ >= 90 dəq
-      if (dayOfWeek >= 1 && dayOfWeek <= 5 && durationMinutes >= 90) {
+      const isIyun = month === 5;
+      const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+      const isDiscountHour = hour >= 11 && hour < 17;
+
+      const applyDiscount = isIyun && isWeekday && isDiscountHour;
+
+      if (applyDiscount) {
         // Orijinal qiyməti bərpa et (əgər əvvəl endirim varsa)
         let originalPrice = req.body.price ? Number(req.body.price) : currentAppointment.price;
         if (currentAppointment.discountApplied &&
@@ -655,9 +694,10 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
           originalPrice = currentAppointment.discount.originalPrice;
         }
 
-        const discountPercent = 10;
+        const discountPercent = 15;
         const discountAmount = (originalPrice * discountPercent) / 100;
         const finalPrice = Math.round(originalPrice - discountAmount);
+        const reason = 'İyun ayı həftəiçi endirimi (15%) - 11:00-17:00';
 
         req.body.price = finalPrice;
         req.body.discountApplied = true;
@@ -665,7 +705,7 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
           percent: discountPercent,
           amount: Number((originalPrice - finalPrice).toFixed(2)),
           originalPrice: originalPrice,
-          reason: 'Həftəiçi endirimi (90 dəq+)'
+          reason
         };
       } else {
         // Şərtlər ödənilmədi — orijinal qiyməti bərpa et, endirimi sıfırla
