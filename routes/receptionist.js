@@ -185,11 +185,12 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
       const startTime = new Date(appointmentData.startTime);
       const month = startTime.getMonth();      // 0-indexed: İyun=5
       const dayOfWeek = startTime.getDay();    // 0=Bazar, 1=B.e, ..., 5=Cümə, 6=Şənbə
-      const hour = startTime.getHours();       // 0-23
+      // Bakı saati = UTC + 4
+      const bakuHour = (startTime.getUTCHours() + 4) % 24;
 
       const isIyun = month === 5;              // İyun ayı
       const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // B.e - Cümə
-      const isDiscountHour = hour >= 11 && hour < 17;     // 11:00-17:00 arası
+      const isDiscountHour = bakuHour >= 11 && bakuHour < 17;              // Bakı 11:00-17:00 arası
 
       const applyDiscount = isIyun && isWeekday && isDiscountHour;
 
@@ -199,7 +200,7 @@ router.post('/appointments/:token', uploadAdvanceReceipt, auth, receptionistAuth
         const discountAmount = (originalPrice * discountPercent) / 100;
         const finalPrice = Math.round(originalPrice - discountAmount);
 
-        const reason = 'İyun ayı həftəiçi endirimi (15%) - 11:00-17:00';
+        const reason = 'İyun ayı həftəiçi endirimi (15%) - 11:00-17:00 (Bakı saati)';
 
         appointmentData.price = finalPrice;
         appointmentData.discountApplied = true;
@@ -677,11 +678,12 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
       const startTime = new Date(startTimeStr);
       const month = startTime.getMonth();      // 0-indexed: İyun=5
       const dayOfWeek = startTime.getDay();    // 0=Bazar, 1=B.e, ..., 5=Cümə
-      const hour = startTime.getHours();       // 0-23
+      // Bakı saati = UTC + 4
+      const bakuHour = (startTime.getUTCHours() + 4) % 24;
 
       const isIyun = month === 5;
       const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
-      const isDiscountHour = hour >= 11 && hour < 17;
+      const isDiscountHour = bakuHour >= 11 && bakuHour < 17; // Bakı 11:00-17:00 arası
 
       const applyDiscount = isIyun && isWeekday && isDiscountHour;
 
@@ -697,7 +699,7 @@ router.put('/appointments/:id', auth, receptionistAuth, async (req, res) => {
         const discountPercent = 15;
         const discountAmount = (originalPrice * discountPercent) / 100;
         const finalPrice = Math.round(originalPrice - discountAmount);
-        const reason = 'İyun ayı həftəiçi endirimi (15%) - 11:00-17:00';
+        const reason = 'İyun ayı həftəiçi endirimi (15%) - 11:00-17:00 (Bakı saati)';
 
         req.body.price = finalPrice;
         req.body.discountApplied = true;
